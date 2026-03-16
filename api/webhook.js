@@ -352,37 +352,88 @@ async function queryChecks(question) {
     'Sen finans asistanısın. Çek bilgilerini tarih sırasıyla listele. Vadesi 7 gün içinde olanları ⚠️ ile işaretle. Sayıları Türk formatında göster. Kısa ve net ol.');
 }
 
-// ==================== SATIŞ SORGULAMA ====================
+// ==================== SATIŞ SORGULAMA (FİRMA BAZLI) ====================
 async function querySales(question) {
   const q = question.toLowerCase();
-  let results = [];
+  
+  // Tüm fatura satırlarını çek
+  const { data: allSales } = await supabase.from('sales').select('*').eq('satir_tipi', 'fatura');
+  if (!allSales || allSales.length === 0) return '📊 Satış verisi bulunamadı.';
 
-  if (q.includes('en karlı') || q.includes('en iyi')) {
-    const { data } = await supabase.from('sales').select('*')
-      .eq('satir_tipi', 'fatura').order('kar_yuzde', { ascending: false }).limit(10);
-    if (data) results = data;
-  } else {
-    const searchTerm = question.replace(/satış|karlılık|kar|en\s*karlı|ne\s*kadar/gi, '').trim();
+  // Firma bazlı topla
+  const firmalar = {};
+  for (const r of allSales) {
+    const firma = r.cari_unvan || 'Bilinmeyen';
+    if (!firmalar[firma]) firmalar[firma] = { toplam: 0, maliyet: 0, kar: 0, fatura: 0 };
+    firmalar[firma].toplam += (r.toplam_tutar || 0);
+    firmalar[firma].maliyet += (r.maliyet || 0);
+    firmalar[firma].kar += (r.kar_toplam || 0);
+    firmalar[firma].fatura += 1;
+  }
+
+  // Firma listesine çevir
+  const firmaList = Object.entries(firmalar).map(([name, v]) => ({
+    firma: name, ...v,
+    kar_pct_satis: v.toplam > 0 ? (v.kar / v.toplam * 100) : 0,
+    kar_pct_maliyet: v.maliyet > 0 ? (v.kar / v.maliyet * 100) : 0
+  }));
+
+  let context = '';
+
+  // EN KARLI
+  if (q.includes('en karlı') || q.includes('en iyi') || q.includes('en çok kar')) {
+    const limit = extractNumber(q) || 10;
+    const sorted = firmaList.sort((a, b) => b.kar - a.kar).slice(0, limit);
+    const toplamKar = firmaList.reduce((s, f) => s + f.kar, 0);
+    const toplamSatis = firmaList.reduce((s, f) => s + f.toplam, 0);
+    context = `EN KARLI ${sorted.length} FİRMA (Toplam Kar Tutarına Göre):\n` +
+      sorted.map((f, i) => `${i + 1}. ${f.firma} | Satış: ${f.toplam.toFixed(0)} TL | Maliyet: ${f.maliyet.toFixed(0)} TL | Kar: ${f.kar.toFixed(0)} TL | Kar/Satış: %${f.kar_pct_satis.toFixed(1)} | ${f.fatura} fatura`).join('\n') +
+      `\n\nGENEL TOPLAM: Satış: ${toplamSatis.toFixed(0)} TL | Kar: ${toplamKar.toFixed(0)} TL | Ortalama Kar/Satış: %${(toplamKar / toplamSatis * 100).toFixed(1)}`;
+  }
+  // EN DÜŞÜK KAR
+  else if (q.includes('en düşük') || q.includes('en az kar') || q.includes('düşük karlı')) {
+    const sorted = firmaList.sort((a, b) => a.kar_pct_satis - b.kar_pct_satis).slice(0, 10);
+    context = `EN DÜŞÜK KARLI 10 FİRMA:\n` +
+      sorted.map((f, i) => `${i + 1}. ${f.firma} | Satış: ${f.toplam.toFixed(0)} TL | Kar: ${f.kar.toFixed(0)} TL | Kar/Satış: %${f.kar_pct_satis.toFixed(1)}`).join('\n');
+  }
+  // GENEL ÖZET
+  else if (q.includes('özet') || q.includes('genel') || q.includes('toplam satış') || q.includes('durum')) {
+    const toplamKar = firmaList.reduce((s, f) => s + f.kar, 0);
+    const toplamSatis = firmaList.reduce((s, f) => s + f.toplam, 0);
+    const toplamMaliyet = firmaList.reduce((s, f) => s + f.maliyet, 0);
+    const toplamFatura = firmaList.reduce((s, f) => s + f.fatura, 0);
+    context = `SATIŞ GENEL ÖZETİ:\nToplam firma: ${firmaList.length}\nToplam fatura: ${toplamFatura}\nToplam satış: ${toplamSatis.toFixed(0)} TL\nToplam maliyet: ${toplamMaliyet.toFixed(0)} TL\nToplam kar: ${toplamKar.toFixed(0)} TL\nOrtalama kar oranı (Kar/Satış): %${(toplamKar / toplamSatis * 100).toFixed(1)}\n\nEN KARLI 5 FİRMA:\n` +
+      firmaList.sort((a, b) => b.kar - a.kar).slice(0, 5).map((f, i) => `${i + 1}. ${f.firma}: ${f.kar.toFixed(0)} TL kar (%${f.kar_pct_satis.toFixed(1)})`).join('\n');
+  }
+  // FİRMA BAZLI ARAMA
+  else {
+    const searchTerm = question.replace(/satış|karlılık|kar|en\s*karlı|ne\s*kadar|satis/gi, '').trim();
     if (searchTerm) {
-      const { data } = await supabase.from('sales').select('*')
-        .eq('satir_tipi', 'fatura')
-        .or(`cari_unvan.ilike.%${searchTerm}%,fatura_no.ilike.%${searchTerm}%`)
-        .order('tarih', { ascending: false }).limit(15);
-      if (data && data.length > 0) results = data;
+      const matched = firmaList.filter(f => f.firma.toLowerCase().includes(searchTerm.toLowerCase()));
+      if (matched.length > 0) {
+        // Fatura detaylarını da getir
+        const { data: detay } = await supabase.from('sales').select('*')
+          .eq('satir_tipi', 'fatura')
+          .ilike('cari_unvan', `%${searchTerm}%`)
+          .order('tarih', { ascending: false });
+        context = `${searchTerm.toUpperCase()} SATIŞ DETAYI:\n\nFirma Toplamı: Satış: ${matched[0].toplam.toFixed(0)} TL | Maliyet: ${matched[0].maliyet.toFixed(0)} TL | Kar: ${matched[0].kar.toFixed(0)} TL | Kar/Satış: %${matched[0].kar_pct_satis.toFixed(1)} | ${matched[0].fatura} fatura\n\nFatura Detayları:\n` +
+          (detay || []).map((r, i) => `${i + 1}. ${r.tarih} | No: ${r.fatura_no} | Tutar: ${r.toplam_tutar} TL | Maliyet: ${r.maliyet} TL | Kar: ${r.kar_toplam} TL`).join('\n');
+      }
     }
-    if (results.length === 0) {
-      const { data } = await supabase.from('sales').select('*')
-        .eq('satir_tipi', 'fatura').order('tarih', { ascending: false }).limit(10);
-      if (data) results = data;
+    if (!context) {
+      // Son satışları göster
+      const sorted = firmaList.sort((a, b) => b.kar - a.kar).slice(0, 10);
+      context = `SON SATIŞ ÖZETİ (Kar Tutarına Göre İlk 10):\n` +
+        sorted.map((f, i) => `${i + 1}. ${f.firma} | Satış: ${f.toplam.toFixed(0)} TL | Kar: ${f.kar.toFixed(0)} TL | %${f.kar_pct_satis.toFixed(1)} | ${f.fatura} fatura`).join('\n');
     }
   }
 
-  const context = results.map((r, i) =>
-    `${i + 1}. Tarih: ${r.tarih} | Firma: ${r.cari_unvan} | Toplam: ${r.toplam_tutar} TL | Maliyet: ${r.maliyet} TL | Kar: ${r.kar_toplam} TL | Kar%: ${r.kar_yuzde ? Number(r.kar_yuzde).toFixed(1) : '-'}%`
-  ).join('\n');
-
   return await askClaude(question, context,
-    'Sen satış analiz asistanısın. Satış ve karlılık bilgilerini düzgün listele. Sayıları Türk formatında göster. Kısa ve net ol.');
+    `Sen satış analiz asistanısın. Karlılık verilerini düzgün listele.
+Kar oranı = Kar / Satış Tutarı olarak göster (maliyet üzerinden değil).
+Sayıları Türk formatında göster (1.234.567 TL).
+Firma bazlı toplam göster, tek fatura bazlı değil.
+Kısa ve net ol.`);
 }
 
 // ==================== YARDIMCI ====================
