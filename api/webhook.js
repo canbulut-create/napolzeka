@@ -144,6 +144,18 @@ const AGENT_TOOLS = [
     }
   },
   {
+    name: "urun_karlilik_sorgula",
+    description: "Ürün bazlı karlılık analizi. Stok kodu veya ürün adıyla arama. Birim fiyat, birim maliyet, toplam satış, toplam maliyet, kar ve kar oranı. En karlı ürünler, ürün detayı.",
+    input_schema: {
+      type: "object",
+      properties: {
+        arama: { type: "string", description: "Ürün adı, stok kodu veya 'en_karli' / 'en_cok_satan' / 'ozet' / 'hepsi'" },
+        limit: { type: "number", description: "Kaç sonuç" }
+      },
+      required: ["arama"]
+    }
+  },
+  {
     name: "bilgi_ekle",
     description: "Bilgi tabanına yeni bilgi ekle. Ürün bilgisi, firma notu, sektör bilgisi vs.",
     input_schema: {
@@ -169,6 +181,7 @@ async function executeTool(toolName, input) {
       case 'satis_karlilik_sorgula': return await execSatis(input);
       case 'bilgi_sorgula': return await execBilgiSorgula(input);
       case 'bilgi_ekle': return await execBilgiEkle(input);
+      case 'urun_karlilik_sorgula': return await execUrunKarlilik(input);
       default: return JSON.stringify({ error: 'Bilinmeyen araç' });
     }
   } catch (e) {
@@ -323,6 +336,51 @@ async function execSatis({ arama, limit = 10 }) {
   }
 }
 
+async function execUrunKarlilik({ arama, limit = 10 }) {
+  const a = arama.toLowerCase();
+  let data;
+
+  if (a === 'en_karli') {
+    ({ data } = await supabase.from('product_profitability').select('*').order('kar_zarar', { ascending: false }).limit(limit));
+  } else if (a === 'en_cok_satan') {
+    ({ data } = await supabase.from('product_profitability').select('*').order('miktar', { ascending: false }).limit(limit));
+  } else if (a === 'ozet' || a === 'genel') {
+    const { data: all } = await supabase.from('product_profitability').select('*');
+    if (all) {
+      const topSatis = all.reduce((s, r) => s + Number(r.satis_tutari || 0), 0);
+      const topMaliyet = all.reduce((s, r) => s + Number(r.toplam_maliyet || 0), 0);
+      const topKar = all.reduce((s, r) => s + Number(r.kar_zarar || 0), 0);
+      return JSON.stringify({
+        toplam_urun: all.length,
+        toplam_satis_tl: topSatis,
+        toplam_maliyet_tl: topMaliyet,
+        toplam_kar_tl: topKar,
+        ortalama_kar_orani: topSatis > 0 ? (topKar / topSatis * 100).toFixed(1) + '%' : '0%',
+        en_karli_5: all.sort((a, b) => Number(b.kar_zarar) - Number(a.kar_zarar)).slice(0, 5).map(r => ({
+          urun: r.stok_adi, kar: r.kar_zarar, oran: r.satis_tutari > 0 ? (r.kar_zarar / r.satis_tutari * 100).toFixed(1) + '%' : '0%'
+        })),
+        en_cok_satan_5: all.sort((a, b) => Number(b.miktar) - Number(a.miktar)).slice(0, 5).map(r => ({
+          urun: r.stok_adi, miktar: r.miktar, birim: r.birim
+        }))
+      });
+    }
+    return '[]';
+  } else if (a === 'hepsi') {
+    ({ data } = await supabase.from('product_profitability').select('*').order('kar_zarar', { ascending: false }).limit(limit));
+  } else {
+    ({ data } = await supabase.from('product_profitability').select('*')
+      .or(`stok_adi.ilike.%${arama}%,stok_kodu.ilike.%${arama}%`).limit(limit));
+    if (!data || data.length === 0) {
+      const words = arama.split(/\s+/).filter(w => w.length > 2);
+      for (const word of words) {
+        ({ data } = await supabase.from('product_profitability').select('*').ilike('stok_adi', `%${word}%`).limit(limit));
+        if (data && data.length > 0) break;
+      }
+    }
+  }
+  return JSON.stringify(data || []);
+}
+
 async function execBilgiSorgula({ arama }) {
   const { data } = await supabase.from('knowledge').select('*')
     .or(`content.ilike.%${arama}%,title.ilike.%${arama}%,category.ilike.%${arama}%`).limit(10);
@@ -411,6 +469,7 @@ KURALLAR:
 - Bakiye negatifse = firmaya borcumuz var, pozitifse = firma bize borçlu
 - Kar oranını her zaman Kar/Satış olarak hesapla (maliyet üzerinden değil)
 - Birden fazla araç kullanabilirsin — karmaşık sorularda birden fazla tablo sorgula
+- Ürün bazlı karlılık için urun_karlilik_sorgula aracını kullan, firma bazlı karlılık için satis_karlilik_sorgula aracını kullan
 - Bilgi tabanında yoksa kendi sektör bilgini kullan
 - Asla uydurma veri verme, veritabanında yoksa söyle
 - Kullanıcıya listeyi düzgün numaralı göster
