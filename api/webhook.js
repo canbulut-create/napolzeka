@@ -72,7 +72,7 @@ async function logQuery(telegramId, queryType, queryText, responseText) {
 const AGENT_TOOLS = [
   {
     name: "cari_sorgula",
-    description: "Cari hesap/firma sorgulama. Firma adı, cari kodu ile arama yapar. Bakiye, borç/alacak durumu, iletişim bilgisi döner. Genel sorgular için filter boş bırakılabilir (en borçlu, toplam bakiye vs.)",
+    description: "Cari hesap/firma sorgulama. Bakiye NEGATİF = biz o firmaya borçluyuz, POZİTİF = firma bize borçlu. 'en_borclu' = bakiye en negatif olan firmalar (tedarikçiler). 'en_alacakli' = bakiye en pozitif olan firmalar (müşteriler).",
     input_schema: {
       type: "object",
       properties: {
@@ -167,6 +167,19 @@ const AGENT_TOOLS = [
       },
       required: ["kategori", "icerik"]
     }
+  },
+  {
+    name: "vergi_hesapla",
+    description: "Vergi hesaplama ve takvim sorgulama. KDV hesaplarken MUTLAKA hangi ay için olduğunu kullanıcıya sor, varsayılan olarak hesaplama. Bir önceki ayın KDV'si bu ay ödenir (Şubat KDV → Mart 28'de ödenir).",
+    input_schema: {
+      type: "object",
+      properties: {
+        islem: { type: "string", description: "'kdv_hesapla' (belirli ay için KDV hesapla), 'yaklasan_vergiler' (önümüzdeki vergi tarihleri), 'takvim' (tüm vergi takvimi)" },
+        ay: { type: "number", description: "KDV hesaplama için ay (1-12). Varsayılan: geçen ay" },
+        yil: { type: "number", description: "KDV hesaplama için yıl. Varsayılan: 2026" }
+      },
+      required: ["islem"]
+    }
   }
 ];
 
@@ -182,6 +195,7 @@ async function executeTool(toolName, input) {
       case 'bilgi_sorgula': return await execBilgiSorgula(input);
       case 'bilgi_ekle': return await execBilgiEkle(input);
       case 'urun_karlilik_sorgula': return await execUrunKarlilik(input);
+      case 'vergi_hesapla': return await execVergi(input);
       default: return JSON.stringify({ error: 'Bilinmeyen araç' });
     }
   } catch (e) {
@@ -194,17 +208,29 @@ async function execCari({ arama, limit = 10, siralama }) {
   let data;
   const a = arama.toLowerCase();
   
-  if (a === 'en_borclu' || a.includes('en borçlu')) {
+  if (a === 'en_borclu' || a.includes('en borçlu') || a.includes('borçlu olduğumuz')) {
+    // Bakiye negatif = BİZ borçluyuz (tedarikçiler)
     ({ data } = await supabase.from('accounts').select('*').lt('bakiye', 0).order('bakiye', { ascending: true }).limit(limit));
-  } else if (a === 'en_alacakli' || a.includes('bize borçlu') || a.includes('en alacak')) {
+    if (data) data = data.map(r => ({ ...r, _aciklama: 'BİZ BU FİRMAYA BORÇLUYUZ (bakiye negatif = tedarikçi)' }));
+  } else if (a === 'en_alacakli' || a.includes('bize borçlu') || a.includes('en alacak') || a.includes('alacaklı')) {
+    // Bakiye pozitif = FİRMA BİZE BORÇLU (müşteriler)
     ({ data } = await supabase.from('accounts').select('*').gt('bakiye', 0).order('bakiye', { ascending: false }).limit(limit));
+    if (data) data = data.map(r => ({ ...r, _aciklama: 'BU FİRMA BİZE BORÇLU (bakiye pozitif = müşteri)' }));
   } else if (a === 'ozet' || a === 'genel' || a === 'toplam') {
     const { data: borclu } = await supabase.from('accounts').select('bakiye').lt('bakiye', 0);
     const { data: alacakli } = await supabase.from('accounts').select('bakiye').gt('bakiye', 0);
     const { count } = await supabase.from('accounts').select('*', { count: 'exact', head: true });
     const toplamBorc = borclu ? borclu.reduce((s, r) => s + Number(r.bakiye), 0) : 0;
     const toplamAlacak = alacakli ? alacakli.reduce((s, r) => s + Number(r.bakiye), 0) : 0;
-    return JSON.stringify({ toplam_cari: count, borclu_firma: borclu?.length || 0, toplam_borc_tl: toplamBorc, alacakli_firma: alacakli?.length || 0, toplam_alacak_tl: toplamAlacak, net_pozisyon_tl: toplamBorc + toplamAlacak });
+    return JSON.stringify({
+      toplam_cari: count,
+      biz_borcluyuz_firma_sayisi: borclu?.length || 0,
+      biz_borcluyuz_toplam_tl: toplamBorc,
+      bize_borclu_firma_sayisi: alacakli?.length || 0,
+      bize_borclu_toplam_tl: toplamAlacak,
+      net_pozisyon_tl: toplamBorc + toplamAlacak,
+      NOT: 'Negatif bakiye = biz o firmaya borçluyuz. Pozitif bakiye = o firma bize borçlu.'
+    });
   } else if (a === 'hepsi') {
     ({ data } = await supabase.from('accounts').select('*').neq('bakiye', 0).order('bakiye', { ascending: true }).limit(limit));
   } else {
@@ -217,6 +243,11 @@ async function execCari({ arama, limit = 10, siralama }) {
         if (data && data.length > 0) break;
       }
     }
+    // Her sonuca açıklama ekle
+    if (data) data = data.map(r => ({
+      ...r,
+      _aciklama: Number(r.bakiye) < 0 ? 'BİZ BU FİRMAYA BORÇLUYUZ' : Number(r.bakiye) > 0 ? 'BU FİRMA BİZE BORÇLU' : 'BAKİYE DENK'
+    }));
   }
   return JSON.stringify(data || []);
 }
@@ -334,6 +365,103 @@ async function execSatis({ arama, limit = 10 }) {
     }
     return JSON.stringify(firmaList.sort((a,b) => b.kar - a.kar).slice(0, limit));
   }
+}
+
+async function execVergi({ islem, ay, yil }) {
+  const now = new Date();
+  const currentYear = yil || now.getFullYear();
+
+  if (islem === 'kdv_hesapla') {
+    // Varsayılan: geçen ay
+    const targetMonth = ay || (now.getMonth() === 0 ? 12 : now.getMonth());
+    const targetYear = ay ? currentYear : (now.getMonth() === 0 ? currentYear - 1 : currentYear);
+    const monthStart = `${targetYear}-${String(targetMonth).padStart(2, '0')}-01`;
+    const nextMonth = targetMonth === 12 ? `${targetYear + 1}-01-01` : `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-01`;
+    const ayIsimleri = ['', 'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+
+    const { data } = await supabase.from('invoices').select('fatura_turu, toplam_tl, genel_toplam_tl')
+      .gte('tarih', monthStart).lt('tarih', nextMonth);
+
+    if (!data || data.length === 0) return JSON.stringify({ ay: ayIsimleri[targetMonth], yil: targetYear, mesaj: 'Bu ay için fatura verisi bulunamadı.' });
+
+    let satis_kdv = 0, alis_kdv = 0, satis_tutar = 0, alis_tutar = 0, satis_adet = 0, alis_adet = 0;
+    for (const r of data) {
+      const kdv = Number(r.genel_toplam_tl || 0) - Number(r.toplam_tl || 0);
+      const tur = (r.fatura_turu || '').toLowerCase();
+      if (tur.includes('satış') || tur.includes('fiyat farkı verilen')) {
+        satis_kdv += kdv; satis_tutar += Number(r.genel_toplam_tl || 0); satis_adet++;
+      } else {
+        alis_kdv += kdv; alis_tutar += Number(r.genel_toplam_tl || 0); alis_adet++;
+      }
+    }
+    const odenecek = satis_kdv - alis_kdv;
+    const odeme_ay = targetMonth === 12 ? 1 : targetMonth + 1;
+    const odeme_yil = targetMonth === 12 ? targetYear + 1 : targetYear;
+
+    return JSON.stringify({
+      donem: `${ayIsimleri[targetMonth]} ${targetYear}`,
+      satis: { adet: satis_adet, tutar_tl: satis_tutar.toFixed(2), kdv_tl: satis_kdv.toFixed(2) },
+      alis: { adet: alis_adet, tutar_tl: alis_tutar.toFixed(2), kdv_tl: alis_kdv.toFixed(2) },
+      odenecek_kdv_tl: odenecek.toFixed(2),
+      durum: odenecek > 0 ? 'ÖDEME YAPILACAK' : 'DEVREDEN KDV VAR',
+      odeme_tarihi: `${odeme_yil}-${String(odeme_ay).padStart(2, '0')}-28`,
+      odeme_aciklama: `${ayIsimleri[odeme_ay]} ${odeme_yil} ayının 28'inde ödenecek`
+    });
+  }
+
+  if (islem === 'yaklasan_vergiler') {
+    const today = now.toISOString().split('T')[0];
+    const next30 = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+    const currentMonth = now.getMonth() + 1;
+    const currentDay = now.getDate();
+
+    const yaklasan = [];
+
+    // Aylık vergiler
+    const ayliklar = [
+      { ad: 'Muhtasar ve SGK', gun: 26 },
+      { ad: 'Damga Vergisi', gun: 26 },
+      { ad: 'KDV', gun: 28 }
+    ];
+    for (const v of ayliklar) {
+      if (v.gun >= currentDay) {
+        const tarih = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(v.gun).padStart(2, '0')}`;
+        const kalan = Math.ceil((new Date(tarih) - now) / 86400000);
+        yaklasan.push({ vergi: v.ad, tarih, kalan_gun: kalan, tur: 'aylik' });
+      }
+    }
+    // Ay sonu
+    const aySonu = new Date(currentYear, currentMonth, 0).getDate();
+    if (aySonu >= currentDay) {
+      const tarih = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(aySonu).padStart(2, '0')}`;
+      const kalan = Math.ceil((new Date(tarih) - now) / 86400000);
+      yaklasan.push({ vergi: 'BA-BS Formları', tarih, kalan_gun: kalan, tur: 'aylik' });
+    }
+
+    // Özel tarihli vergiler
+    const { data: ozelVergiler } = await supabase.from('tax_calendar').select('*')
+      .in('kategori', ['ucaylik', 'yillik', 'diger']).eq('aktif', true);
+    if (ozelVergiler) {
+      for (const v of ozelVergiler) {
+        if (v.donem && v.donem.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          if (v.donem >= today && v.donem <= next30) {
+            const kalan = Math.ceil((new Date(v.donem) - now) / 86400000);
+            yaklasan.push({ vergi: v.vergi_adi, tarih: v.donem, kalan_gun: kalan, tur: v.kategori, aciklama: v.aciklama });
+          }
+        }
+      }
+    }
+
+    yaklasan.sort((a, b) => a.kalan_gun - b.kalan_gun);
+    return JSON.stringify({ bugun: today, yaklasan_vergiler: yaklasan });
+  }
+
+  if (islem === 'takvim') {
+    const { data } = await supabase.from('tax_calendar').select('*').eq('aktif', true).order('kategori');
+    return JSON.stringify(data || []);
+  }
+
+  return JSON.stringify({ hata: 'Geçersiz işlem. kdv_hesapla, yaklasan_vergiler veya takvim kullanın.' });
 }
 
 async function execUrunKarlilik({ arama, limit = 10 }) {
@@ -455,25 +583,99 @@ async function generateMorningReport() {
     r += `📊 *AY İÇİ KARLILIK*\nSatış: ${fmtMoney(topSatis)} TL | Kar: ${fmtMoney(topKar)} TL | Oran: %${topSatis>0?(topKar/topSatis*100).toFixed(1):'0'}\n\n`;
   }
 
+  // Vergi hatırlatması
+  const currentDay = new Date().getDate();
+  const currentMonth = new Date().getMonth() + 1;
+  const currentYear = new Date().getFullYear();
+  const vergiHatirlatma = [];
+
+  // Aylık vergiler
+  const aylikVergiler = [
+    { ad: 'Muhtasar ve SGK', gun: 26 },
+    { ad: 'Damga Vergisi', gun: 26 },
+    { ad: 'KDV', gun: 28 }
+  ];
+  for (const v of aylikVergiler) {
+    const kalan = v.gun - currentDay;
+    if (kalan === 7) vergiHatirlatma.push({ ad: v.ad, gun: v.gun, kalan: 7 });
+    if (kalan === 0) vergiHatirlatma.push({ ad: v.ad, gun: v.gun, kalan: 0 });
+  }
+  // Ay sonu (BA-BS)
+  const aySonu = new Date(currentYear, currentMonth, 0).getDate();
+  const kalanAySonu = aySonu - currentDay;
+  if (kalanAySonu === 7 || kalanAySonu === 0) vergiHatirlatma.push({ ad: 'BA-BS Formları', gun: aySonu, kalan: kalanAySonu });
+
+  // Özel tarihli vergiler
+  const { data: ozelVergiler } = await supabase.from('tax_calendar').select('*')
+    .in('kategori', ['ucaylik', 'yillik', 'diger']).eq('aktif', true);
+  if (ozelVergiler) {
+    for (const v of ozelVergiler) {
+      if (v.donem && v.donem.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        const vDate = new Date(v.donem);
+        const kalanGun = Math.ceil((vDate - new Date(today)) / 86400000);
+        if (kalanGun === 7 || kalanGun === 0) vergiHatirlatma.push({ ad: v.vergi_adi, gun: v.donem, kalan: kalanGun });
+      }
+    }
+  }
+
+  if (vergiHatirlatma.length > 0) {
+    r += `🏛️ *VERGİ HATIRLATMA*\n`;
+    vergiHatirlatma.forEach(v => {
+      if (v.kalan === 0) r += `🔴 BUGÜN: ${v.ad}\n`;
+      else r += `⚠️ 7 GÜN KALDI: ${v.ad} (${v.gun})\n`;
+    });
+
+    // KDV hesaplaması — bugün veya 7 gün kala
+    const kdvHatirlatma = vergiHatirlatma.find(v => v.ad === 'KDV');
+    if (kdvHatirlatma) {
+      const gecenAy = currentMonth === 1 ? 12 : currentMonth - 1;
+      const gecenYil = currentMonth === 1 ? currentYear - 1 : currentYear;
+      const ayBaslangic = `${gecenYil}-${String(gecenAy).padStart(2, '0')}-01`;
+      const ayBitis = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`;
+      const { data: faturalar } = await supabase.from('invoices').select('fatura_turu, toplam_tl, genel_toplam_tl')
+        .gte('tarih', ayBaslangic).lt('tarih', ayBitis);
+      if (faturalar && faturalar.length > 0) {
+        let satisKdv = 0, alisKdv = 0;
+        for (const f of faturalar) {
+          const kdv = Number(f.genel_toplam_tl || 0) - Number(f.toplam_tl || 0);
+          if ((f.fatura_turu || '').toLowerCase().includes('satış')) satisKdv += kdv;
+          else alisKdv += kdv;
+        }
+        const odenecek = satisKdv - alisKdv;
+        r += `\n💰 *TAHMİNİ KDV: ${fmtMoney(odenecek)} TL* ${odenecek > 0 ? '(ödeme)' : '(devreden)'}\n`;
+        r += `   Satış KDV: ${fmtMoney(satisKdv)} TL | Alış KDV: ${fmtMoney(alisKdv)} TL\n`;
+      }
+    }
+    r += '\n';
+  }
+
   r += `━━━━━━━━━━━━━━━━━━━━━━\n_OpenClaw Agent — Napol Global_`;
   return r;
 }
 
 // ==================== AGENT CORE ====================
 const SYSTEM_PROMPT = `Sen OpenClaw, Napol Global şirketinin AI agent asistanısın.
-Kağıt, ambalaj ve medikal ambalaj sektöründe üretim/ticaret yapan bir şirketin akıllı asistanısın.
+Napol Global; silikonlu kağıt, silikonlu film ve medikal ambalaj kağıtları üretim/ticareti yapan bir şirket.
 
-KURALLAR:
+KRİTİK KURALLAR — BORÇ/ALACAK:
+- Veritabanındaki bakiye sütunu: NEGATİF = BİZ O FİRMAYA BORÇLUYUZ (tedarikçilerimiz, bize mal satan firmalar)
+- Veritabanındaki bakiye sütunu: POZİTİF = O FİRMA BİZE BORÇLU (müşterilerimiz, bizden mal alan firmalar)
+- B/A sütunu: "A" = Alacaklı firma (biz ona borçluyuz), "B" = Borçlu firma (o bize borçlu)
+- "Bize borçlu firmalar" = bakiye POZİTİF olanlar (müşteriler)
+- "Borçlu olduğumuz firmalar" = bakiye NEGATİF olanlar (tedarikçiler)
+- BU KURALI ASLA KARIŞTIRMA. Her cevabında bakiye işaretine göre doğru ifade kullan.
+
+GENEL KURALLAR:
 - Türkçe cevap ver. Kısa, net ve profesyonel ol.
-- Sayıları Türk formatında göster: 1.234.567,89 TL
-- Bakiye negatifse = firmaya borcumuz var, pozitifse = firma bize borçlu
-- Kar oranını her zaman Kar/Satış olarak hesapla (maliyet üzerinden değil)
+- Sayıları Türk formatında göster: 1.234.567,89 TL (nokta binlik ayraç, virgül ondalık)
+- Kar oranını her zaman Kar/Satış Tutarı olarak hesapla (maliyet üzerinden değil)
 - Birden fazla araç kullanabilirsin — karmaşık sorularda birden fazla tablo sorgula
-- Ürün bazlı karlılık için urun_karlilik_sorgula aracını kullan, firma bazlı karlılık için satis_karlilik_sorgula aracını kullan
-- Bilgi tabanında yoksa kendi sektör bilgini kullan
+- Ürün bazlı karlılık için urun_karlilik_sorgula, firma bazlı karlılık için satis_karlilik_sorgula kullan
+- KDV hesabı yapılacaksa mutlaka hangi ay için olduğunu kullanıcıya sor
+- Bilgi tabanında yoksa kendi sektör bilgini kullan (silikonlu kağıt, release liner, medikal ambalaj)
 - Asla uydurma veri verme, veritabanında yoksa söyle
-- Kullanıcıya listeyi düzgün numaralı göster
-- Önemli bilgileri vurgula
+- Listeyi düzgün numaralı göster
+- Emoji kullan: 🔴 borç, 💰 alacak, ✅ denk, 📦 stok, 📄 fatura, 📅 çek, 📊 karlılık
 
 Bugünün tarihi: ${new Date().toISOString().split('T')[0]}`;
 
