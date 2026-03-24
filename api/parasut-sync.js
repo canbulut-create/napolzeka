@@ -1,5 +1,5 @@
 // parasut-sync.js — Vercel Serverless Function
-// Parasüt API v4 → Supabase sync
+// Parasüt API v4 → Supabase sync + retry mekanizması
 // Tablolar: parasut_cariler, parasut_giden_fatura, parasut_gelen_fatura, parasut_stok
 // Token: parasut_tokens tablosunda saklanır
 // Deploy: api/parasut-sync.js
@@ -9,11 +9,16 @@ const { createClient } = require('@supabase/supabase-js');
 // ─── Config ───
 const PARASUT_API = 'https://api.parasut.com/v4';
 const PARASUT_AUTH = 'https://api.parasut.com/oauth/token';
+const MAX_RETRIES = 3;
 
 function env(key) {
   const v = process.env[key];
   if (!v) throw new Error(`Eksik env: ${key}`);
   return v;
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // ─── Supabase Client ───
@@ -107,7 +112,7 @@ async function saveToken(supabase, token) {
   console.log('✅ Token kaydedildi.');
 }
 
-// ─── Parasüt API Helper ───
+// ─── Parasüt API Helper (retry ile) ───
 async function apiGet(token, endpoint, params = {}) {
   const companyId = env('PARASUT_COMPANY_ID');
   const url = new URL(`${PARASUT_API}/${companyId}/${endpoint}`);
@@ -115,19 +120,30 @@ async function apiGet(token, endpoint, params = {}) {
   if (!params['page[size]']) params['page[size]'] = 25;
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
 
-  const res = await fetch(url.toString(), {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/vnd.api+json',
-    },
-  });
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const res = await fetch(url.toString(), {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/vnd.api+json',
+      },
+    });
 
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`API hatası [${endpoint}]: ${res.status} - ${err}`);
+    if (res.status === 429) {
+      const waitSec = attempt * 3;
+      console.log(`⏳ Rate limit, ${waitSec}s bekleniyor... (deneme ${attempt}/${MAX_RETRIES})`);
+      await sleep(waitSec * 1000);
+      continue;
+    }
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`API hatası [${endpoint}]: ${res.status} - ${err}`);
+    }
+
+    return res.json();
   }
 
-  return res.json();
+  throw new Error(`API rate limit aşıldı [${endpoint}]: ${MAX_RETRIES} deneme başarısız`);
 }
 
 async function apiGetAll(token, endpoint, params = {}) {
@@ -147,6 +163,8 @@ async function apiGetAll(token, endpoint, params = {}) {
     const totalPages = result.meta?.total_pages || 1;
     if (page >= totalPages) break;
     page++;
+
+    await sleep(500);
   }
 
   return all;
@@ -181,12 +199,10 @@ async function syncCariler(token, supabase) {
   return { cariler: rows.length };
 }
 
-// ─── Sync: Satış Faturaları (Giden) ───
+// ─── Sync: Giden Fatura ───
 async function syncGidenFatura(token, supabase) {
   console.log('🧾 Giden faturalar sync ediliyor...');
-  const invoices = await apiGetAll(token, 'sales_invoices', {
-    include: 'contact',
-  });
+  const invoices = await apiGetAll(token, 'sales_invoices', { include: 'contact' });
 
   const rows = invoices.map((inv) => ({
     parasut_id: inv.id,
@@ -219,12 +235,10 @@ async function syncGidenFatura(token, supabase) {
   return { giden_fatura: rows.length };
 }
 
-// ─── Sync: Alış Faturaları (Gelen) ───
+// ─── Sync: Gelen Fatura ───
 async function syncGelenFatura(token, supabase) {
   console.log('🧾 Gelen faturalar sync ediliyor...');
-  const bills = await apiGetAll(token, 'purchase_bills', {
-    include: 'contact',
-  });
+  const bills = await apiGetAll(token, 'purchase_bills', { include: 'contact' });
 
   const rows = bills.map((inv) => ({
     parasut_id: inv.id,
@@ -255,7 +269,7 @@ async function syncGelenFatura(token, supabase) {
   return { gelen_fatura: rows.length };
 }
 
-// ─── Sync: Ürünler / Stok ───
+// ─── Sync: Stok ───
 async function syncStok(token, supabase) {
   console.log('📦 Stok sync ediliyor...');
   const products = await apiGetAll(token, 'products');
@@ -306,12 +320,15 @@ module.exports = async function handler(req, res) {
       results = { ...results, ...(await syncCariler(token, supabase)) };
     }
     if (type === 'all' || type === 'giden') {
+      await sleep(1000);
       results = { ...results, ...(await syncGidenFatura(token, supabase)) };
     }
     if (type === 'all' || type === 'gelen') {
+      await sleep(1000);
       results = { ...results, ...(await syncGelenFatura(token, supabase)) };
     }
     if (type === 'all' || type === 'stok') {
+      await sleep(1000);
       results = { ...results, ...(await syncStok(token, supabase)) };
     }
 
