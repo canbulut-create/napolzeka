@@ -136,7 +136,7 @@ async function diaRaporSonucGetir(sessionId, firmaKodu, donemKodu, raporKodu, ta
     rpr_raporsonuc_getir: {
       session_id: sessionId, firma_kodu: firmaKodu, donem_kodu: donemKodu,
       report_code: raporKodu,
-      tasarim_key: tasarimKey,
+      tasarim_key: parseInt(tasarimKey) || 0,
       param: param,
       format_type: formatType || 'json'
     }
