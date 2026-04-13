@@ -3,6 +3,9 @@
   "functions": {
     "api/**/*.js": {
       "maxDuration": 30
+    },
+    "api/dia-sync.js": {
+      "maxDuration": 60
     }
   }
 }
