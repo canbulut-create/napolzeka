@@ -1,6 +1,6 @@
 // api/dia-sync.js
 // DIA Web Servis API → Supabase sync
-// Toplam DIA çağrısı: login(0) + firma_donem(1) + cari(1) + stok(1) + fatura(1) + logout(0) = 4 kontör
+// Toplam DIA cagrisi: login(0) + firma_donem(1) + cari(1) + stok(1) + fatura(1) + logout(0) = 4 kontor
 
 const { createClient } = require('@supabase/supabase-js');
 
@@ -16,20 +16,35 @@ const supabase = createClient(
 
 // ---- DIA API Helper ----
 async function diaCall(endpoint, body) {
+  console.log('DIA istek:', endpoint, JSON.stringify(body).substring(0, 200));
   const res = await fetch(`${DIA_BASE_URL}/${endpoint}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
-  const data = await res.json();
-  if (data.code !== '200') {
-    throw new Error(`DIA API hata: ${data.msg || JSON.stringify(data)}`);
+  const text = await res.text();
+  console.log('DIA ham yanit:', text.substring(0, 500));
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    throw new Error(`DIA JSON parse hata: ${text.substring(0, 300)}`);
+  }
+  if (String(data.code) !== '200') {
+    throw new Error(`DIA API hata [code=${data.code}]: ${data.msg || JSON.stringify(data).substring(0, 300)}`);
   }
   return data;
 }
 
 // ---- 1. LOGIN ----
 async function diaLogin() {
+  console.log('Login baslatiliyor...');
+  console.log('Server:', process.env.DIA_SERVER);
+  console.log('User:', DIA_USERNAME);
+  console.log('API Key uzunluk:', DIA_API_KEY ? DIA_API_KEY.length : 'YOK');
+  console.log('API Key ilk 8:', DIA_API_KEY ? DIA_API_KEY.substring(0, 8) : 'YOK');
+  console.log('Base URL:', DIA_BASE_URL);
+
   const data = await diaCall('sis/json', {
     login: {
       username: DIA_USERNAME,
@@ -39,7 +54,8 @@ async function diaLogin() {
       params: { apikey: DIA_API_KEY }
     }
   });
-  return data.msg; // session_id
+  console.log('Login basarili, session_id:', data.msg);
+  return data.msg;
 }
 
 // ---- 2. LOGOUT ----
@@ -49,18 +65,18 @@ async function diaLogout(sessionId) {
       logout: { session_id: sessionId }
     });
   } catch (e) {
-    console.warn('Logout hatası (önemsiz):', e.message);
+    console.warn('Logout hatasi (onemsiz):', e.message);
   }
 }
 
-// ---- 3. FİRMA/DÖNEM BUL ----
+// ---- 3. FIRMA/DONEM BUL ----
 async function diaFirmaDonBul(sessionId) {
   const data = await diaCall('sis/json', {
     sis_yetkili_firma_donem_sube_depo: {
       session_id: sessionId
     }
   });
-  const firma = data.result[0]; // ilk yetkili firma
+  const firma = data.result[0];
   const donem = firma.donemler.find(d => d.ontanimli === 't') || firma.donemler[0];
   return {
     firma_kodu: firma.firmakodu,
@@ -69,7 +85,7 @@ async function diaFirmaDonBul(sessionId) {
   };
 }
 
-// ---- 4. CARİ LİSTELE ----
+// ---- 4. CARI LISTELE ----
 async function diaCarileriCek(sessionId, firmaKodu, donemKodu) {
   const data = await diaCall('scf/json', {
     scf_carikart_listele: {
@@ -86,7 +102,7 @@ async function diaCarileriCek(sessionId, firmaKodu, donemKodu) {
   return data.result || [];
 }
 
-// ---- 5. STOK LİSTELE ----
+// ---- 5. STOK LISTELE ----
 async function diaStoklariCek(sessionId, firmaKodu, donemKodu) {
   const data = await diaCall('scf/json', {
     scf_stokkart_listele: {
@@ -103,7 +119,7 @@ async function diaStoklariCek(sessionId, firmaKodu, donemKodu) {
   return data.result || [];
 }
 
-// ---- 6. FATURA LİSTELE ----
+// ---- 6. FATURA LISTELE ----
 async function diaFaturalariCek(sessionId, firmaKodu, donemKodu) {
   const data = await diaCall('scf/json', {
     scf_fatura_listele: {
@@ -142,7 +158,6 @@ async function supabaseUpsertCariler(cariler) {
     synced_at: new Date().toISOString()
   }));
 
-  // Batch upsert (500'lük gruplar)
   for (let i = 0; i < rows.length; i += 500) {
     const batch = rows.slice(i, i + 500);
     const { error } = await supabase
@@ -218,15 +233,13 @@ async function logSync(syncType, status, recordCount, errorMessage, startedAt) {
 
 // ---- ANA HANDLER ----
 module.exports = async (req, res) => {
-  // Basit güvenlik: query param ile tetikleme
   const authToken = req.query?.token || req.headers?.['x-sync-token'];
   const expectedToken = process.env.SYNC_SECRET || 'napolzeka2024';
 
   if (authToken !== expectedToken) {
-    return res.status(401).json({ error: 'Yetkisiz erişim' });
+    return res.status(401).json({ error: 'Yetkisiz erisim' });
   }
 
-  // Hangi veri tipleri sync edilecek
   const syncTypes = (req.query?.type || 'all').split(',');
   const syncAll = syncTypes.includes('all');
 
@@ -238,17 +251,17 @@ module.exports = async (req, res) => {
     // 1. Login
     console.log('DIA Login...');
     sessionId = await diaLogin();
-    console.log('Session ID alındı');
+    console.log('Session ID alindi:', sessionId);
 
-    // 2. Firma/Dönem bul
-    console.log('Firma/Dönem sorgulanıyor...');
+    // 2. Firma/Donem bul
+    console.log('Firma/Donem sorgulanıyor...');
     const { firma_kodu, donem_kodu, firma_adi } = await diaFirmaDonBul(sessionId);
-    console.log(`Firma: ${firma_adi} (${firma_kodu}), Dönem: ${donem_kodu}`);
+    console.log(`Firma: ${firma_adi} (${firma_kodu}), Donem: ${donem_kodu}`);
     results.firma = { firma_kodu, donem_kodu, firma_adi };
 
     // 3. Cari sync
     if (syncAll || syncTypes.includes('cari')) {
-      console.log('Cariler çekiliyor...');
+      console.log('Cariler cekiliyor...');
       const cariler = await diaCarileriCek(sessionId, firma_kodu, donem_kodu);
       const count = await supabaseUpsertCariler(cariler);
       results.cariler = count;
@@ -258,7 +271,7 @@ module.exports = async (req, res) => {
 
     // 4. Stok sync
     if (syncAll || syncTypes.includes('stok')) {
-      console.log('Stoklar çekiliyor...');
+      console.log('Stoklar cekiliyor...');
       const stoklar = await diaStoklariCek(sessionId, firma_kodu, donem_kodu);
       const count = await supabaseUpsertStoklar(stoklar);
       results.stoklar = count;
@@ -268,7 +281,7 @@ module.exports = async (req, res) => {
 
     // 5. Fatura sync
     if (syncAll || syncTypes.includes('fatura')) {
-      console.log('Faturalar çekiliyor...');
+      console.log('Faturalar cekiliyor...');
       const faturalar = await diaFaturalariCek(sessionId, firma_kodu, donem_kodu);
       const count = await supabaseUpsertFaturalar(faturalar);
       results.faturalar = count;
@@ -282,16 +295,15 @@ module.exports = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: 'DIA sync tamamlandı',
+      message: 'DIA sync tamamlandi',
       results,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    console.error('DIA Sync hatası:', error.message);
+    console.error('DIA Sync hatasi:', error.message);
     await logSync('error', 'failed', 0, error.message, startedAt);
 
-    // Hata durumunda da logout dene
     if (sessionId) {
       await diaLogout(sessionId);
     }
