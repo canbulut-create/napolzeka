@@ -6,6 +6,7 @@
     },
     "api/dia-sync.js": {
       "maxDuration": 60
+      
     }
   }
 }
