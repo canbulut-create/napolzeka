@@ -75,7 +75,7 @@ async function diaFirmaDonBul(sessionId, hedefYil) {
     donem = firma.donemler.find(d => d.ontanimli === 't') || firma.donemler[0];
   }
   return { firma_kodu: firma.firmakodu, donem_kodu: donem.donemkodu, firma_adi: firma.firmaadi };
-
+}
 // ---- 4. CARI LISTELE ----
 async function diaCarileriCek(sessionId, firmaKodu, donemKodu) {
   const data = await diaCall('scf/json', {
