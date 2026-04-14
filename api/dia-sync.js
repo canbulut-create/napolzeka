@@ -62,14 +62,19 @@ async function diaLogout(sessionId) {
 }
 
 // ---- 3. FIRMA/DONEM BUL ----
-async function diaFirmaDonBul(sessionId) {
+async function diaFirmaDonBul(sessionId, hedefYil) {
   const data = await diaCall('sis/json', {
     sis_yetkili_firma_donem_sube_depo: { session_id: sessionId }
   });
   const firma = data.result[0];
-  const donem = firma.donemler.find(d => d.ontanimli === 't') || firma.donemler[0];
+  let donem;
+  if (hedefYil) {
+    donem = firma.donemler.find(d => d.baslangictarihi && d.baslangictarihi.startsWith(String(hedefYil)));
+  }
+  if (!donem) {
+    donem = firma.donemler.find(d => d.ontanimli === 't') || firma.donemler[0];
+  }
   return { firma_kodu: firma.firmakodu, donem_kodu: donem.donemkodu, firma_adi: firma.firmaadi };
-}
 
 // ---- 4. CARI LISTELE ----
 async function diaCarileriCek(sessionId, firmaKodu, donemKodu) {
@@ -226,7 +231,7 @@ module.exports = async (req, res) => {
 
     // 2. Firma/Donem bul
     console.log('Firma/Donem sorgulanıyor...');
-    const { firma_kodu, donem_kodu, firma_adi } = await diaFirmaDonBul(sessionId);
+    const { firma_kodu, donem_kodu, firma_adi } = await diaFirmaDonBul(sessionId, 2026);
     console.log(`Firma: ${firma_adi} (${firma_kodu}), Donem: ${donem_kodu}`);
     results.firma = { firma_kodu, donem_kodu, firma_adi };
 
