@@ -1,8 +1,8 @@
 {
-  "version": 2,
-  "functions": {
-    "api/**/*.js": {
-      "maxDuration": 60
+  "crons": [
+    {
+      "path": "/api/daily-report",
+      "schedule": "0 15 * * *"
     }
-  }
+  ]
 }
