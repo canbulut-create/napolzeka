@@ -52,12 +52,12 @@ async function checkLimits(telegramId) {
   const today = new Date().toISOString().split('T')[0];
   const { count: dailyCount } = await supabase.from('query_logs').select('*', { count: 'exact', head: true })
     .eq('user_id', telegramId).gte('created_at', today + 'T00:00:00').lte('created_at', today + 'T23:59:59');
-  if ((dailyCount || 0) >= DAILY_LIMIT) return { ok: false, msg: `â ï¸ GÃ¼nlÃ¼k soru limitinize ulaÅtÄ±nÄ±z (${DAILY_LIMIT}). YarÄ±n tekrar deneyebilirsiniz.` };
+  if ((dailyCount || 0) >= DAILY_LIMIT) return { ok: false, msg: `Ã¢ÂÂ Ã¯Â¸Â GÃÂ¼nlÃÂ¼k soru limitinize ulaÃÂtÃÂ±nÃÂ±z (${DAILY_LIMIT}). YarÃÂ±n tekrar deneyebilirsiniz.` };
   const now = new Date();
   const monthStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01T00:00:00`;
   const { count: monthCount } = await supabase.from('query_logs').select('*', { count: 'exact', head: true })
     .gte('created_at', monthStart).not('query_type', 'in', '("start","help")');
-  if ((monthCount || 0) * COST_PER_QUERY >= MONTHLY_BUDGET_USD) return { ok: false, msg: `â ï¸ AylÄ±k API bÃ¼tÃ§esi doldu ($${MONTHLY_BUDGET_USD}).` };
+  if ((monthCount || 0) * COST_PER_QUERY >= MONTHLY_BUDGET_USD) return { ok: false, msg: `Ã¢ÂÂ Ã¯Â¸Â AylÃÂ±k API bÃÂ¼tÃÂ§esi doldu ($${MONTHLY_BUDGET_USD}).` };
   return { ok: true, daily: dailyCount || 0, monthly: ((monthCount || 0) * COST_PER_QUERY).toFixed(2) };
 }
 
@@ -69,14 +69,14 @@ async function logQuery(telegramId, queryType, queryText, responseText) {
 
 // ==================== AGENT TOOLS ====================
 const AGENT_TOOLS = [
-  { name: "cari_sorgula", description: "Cari hesap/firma sorgulama. Bakiye NEGATÄ°F = biz o firmaya borÃ§luyuz, POZÄ°TÄ°F = firma bize borÃ§lu.", input_schema: { type: "object", properties: { arama: { type: "string" }, limit: { type: "number" }, siralama: { type: "string" } }, required: ["arama"] } },
+  { name: "cari_sorgula", description: "Cari hesap/firma sorgulama. Bakiye NEGATÃÂ°F = biz o firmaya borÃÂ§luyuz, POZÃÂ°TÃÂ°F = firma bize borÃÂ§lu.", input_schema: { type: "object", properties: { arama: { type: "string" }, limit: { type: "number" }, siralama: { type: "string" } }, required: ["arama"] } },
   { name: "stok_sorgula", description: "Depo stok sorgulama.", input_schema: { type: "object", properties: { arama: { type: "string" }, limit: { type: "number" } }, required: ["arama"] } },
   { name: "fatura_sorgula", description: "Fatura sorgulama.", input_schema: { type: "object", properties: { arama: { type: "string" }, tur: { type: "string" }, limit: { type: "number" } }, required: ["arama"] } },
-  { name: "cek_sorgula", description: "Ãek ve senet sorgulama.", input_schema: { type: "object", properties: { arama: { type: "string" }, limit: { type: "number" } }, required: ["arama"] } },
-  { name: "satis_karlilik_sorgula", description: "SatÄ±Å karlÄ±lÄ±k analizi.", input_schema: { type: "object", properties: { arama: { type: "string" }, limit: { type: "number" } }, required: ["arama"] } },
-  { name: "bilgi_sorgula", description: "Åirket bilgi tabanÄ±nÄ± sorgula.", input_schema: { type: "object", properties: { arama: { type: "string" } }, required: ["arama"] } },
-  { name: "urun_karlilik_sorgula", description: "ÃrÃ¼n bazlÄ± karlÄ±lÄ±k analizi.", input_schema: { type: "object", properties: { arama: { type: "string" }, limit: { type: "number" } }, required: ["arama"] } },
-  { name: "bilgi_ekle", description: "Bilgi tabanÄ±na yeni bilgi ekle.", input_schema: { type: "object", properties: { kategori: { type: "string" }, baslik: { type: "string" }, icerik: { type: "string" } }, required: ["kategori", "icerik"] } },
+  { name: "cek_sorgula", description: "ÃÂek ve senet sorgulama.", input_schema: { type: "object", properties: { arama: { type: "string" }, limit: { type: "number" } }, required: ["arama"] } },
+  { name: "satis_karlilik_sorgula", description: "SatÃÂ±ÃÂ karlÃÂ±lÃÂ±k analizi.", input_schema: { type: "object", properties: { arama: { type: "string" }, limit: { type: "number" } }, required: ["arama"] } },
+  { name: "bilgi_sorgula", description: "ÃÂirket bilgi tabanÃÂ±nÃÂ± sorgula.", input_schema: { type: "object", properties: { arama: { type: "string" } }, required: ["arama"] } },
+  { name: "urun_karlilik_sorgula", description: "ÃÂrÃÂ¼n bazlÃÂ± karlÃÂ±lÃÂ±k analizi.", input_schema: { type: "object", properties: { arama: { type: "string" }, limit: { type: "number" } }, required: ["arama"] } },
+  { name: "bilgi_ekle", description: "Bilgi tabanÃÂ±na yeni bilgi ekle.", input_schema: { type: "object", properties: { kategori: { type: "string" }, baslik: { type: "string" }, icerik: { type: "string" } }, required: ["kategori", "icerik"] } },
   { name: "vergi_hesapla", description: "Vergi hesaplama ve takvim sorgulama.", input_schema: { type: "object", properties: { islem: { type: "string" }, ay: { type: "number" }, yil: { type: "number" } }, required: ["islem"] } }
 ];
 
@@ -93,15 +93,15 @@ async function executeTool(toolName, input) {
       case 'bilgi_ekle': return await execBilgiEkle(input);
       case 'urun_karlilik_sorgula': return await execUrunKarlilik(input);
       case 'vergi_hesapla': return await execVergi(input);
-      default: return JSON.stringify({ error: 'Bilinmeyen araÃ§' });
+      default: return JSON.stringify({ error: 'Bilinmeyen araÃÂ§' });
     }
   } catch (e) { console.error(`Tool error ${toolName}:`, e); return JSON.stringify({ error: e.message }); }
 }
 
 async function execCari({arama,limit=10}){
-  const sid=await diaLogin();const a=arama.toLowerCase().trim();
+  const sid=await diaLoginK();const a=arama.toLowerCase().trim();
   if(a==='ozet'||a==='genel'){
-    const res=await diaCall('scf/json',{scf_carikart_listele:{session_id:sid,firma_kodu:DIA_FIRMA,donem_kodu:DIA_DONEM,filters:[],sorts:[{field:'bakiye',sorttype:'ASC'}],limit:500,offset:0}});
+    const res=await diaCallK('scf/json',{scf_carikart_listele:{session_id:sid,firma_kodu:DIA_FIRMA,donem_kodu:DIA_DONEM,filters:[],sorts:[{field:'bakiye',sorttype:'ASC'}],limit:500,offset:0}});
     const rows=res.result||[];
     return JSON.stringify({toplam:rows.length,biz_borclu:rows.filter(r=>Number(r.bakiye)<0).length,bize_borclu:rows.filter(r=>Number(r.bakiye)>0).length,biz_borclu_toplam:rows.filter(r=>Number(r.bakiye)<0).reduce((s,r)=>s+Number(r.bakiye),0),bize_borclu_toplam:rows.filter(r=>Number(r.bakiye)>0).reduce((s,r)=>s+Number(r.bakiye),0)});
   }
@@ -113,13 +113,13 @@ async function execCari({arama,limit=10}){
   } else {
     filters=[{field:'unvan',operator:'like',value:`%${arama}%`}];
   }
-  const res=await diaCall('scf/json',{scf_carikart_listele:{session_id:sid,firma_kodu:DIA_FIRMA,donem_kodu:DIA_DONEM,filters,sorts,limit,offset:0}});
+  const res=await diaCallK('scf/json',{scf_carikart_listele:{session_id:sid,firma_kodu:DIA_FIRMA,donem_kodu:DIA_DONEM,filters,sorts,limit,offset:0}});
   let rows=res.result||[];
   if(rows.length===0&&filters[0]?.field==='unvan'){
     const words=arama.split(/\s+/).filter(w=>w.length>2);
-    for(const w of words){const r2=await diaCall('scf/json',{scf_carikart_listele:{session_id:sid,firma_kodu:DIA_FIRMA,donem_kodu:DIA_DONEM,filters:[{field:'unvan',operator:'like',value:`%${w}%`}],sorts:[],limit,offset:0}});rows=r2.result||[];if(rows.length>0)break;}
+    for(const w of words){const r2=await diaCallK('scf/json',{scf_carikart_listele:{session_id:sid,firma_kodu:DIA_FIRMA,donem_kodu:DIA_DONEM,filters:[{field:'unvan',operator:'like',value:`%${w}%`}],sorts:[],limit,offset:0}});rows=r2.result||[];if(rows.length>0)break;}
   }
-  rows=rows.map(r=>({...r,_durum:Number(r.bakiye)<0?'BİZ BORÇLUYUZ':Number(r.bakiye)>0?'FİRMA BİZE BORÇLU':'DENK'}));
+  rows=rows.map(r=>({...r,_durum:Number(r.bakiye)<0?'BÄ°Z BORÃLUYUZ':Number(r.bakiye)>0?'FÄ°RMA BÄ°ZE BORÃLU':'DENK'}));
   return JSON.stringify(rows);
 }
 
@@ -135,31 +135,31 @@ async function execStok({arama,limit=20}){
 }
 
 async function execFatura({arama,limit=15}){
-  const sid=await diaLogin();const a=arama.toLowerCase().trim();const now=new Date();
+  const sid=await diaLoginK();const a=arama.toLowerCase().trim();const now=new Date();
   let filters=[],sorts=[{field:'tarih',sorttype:'DESC'}];
   if(a==='bu_ay'){filters=[{field:'tarih',operator:'>=',value:`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`}];}
   else if(a==='bugun'){filters=[{field:'tarih',operator:'=',value:now.toISOString().split('T')[0]}];}
   else if(a!=='son'&&a!=='son_faturalar'){filters=[{field:'_aciklama',operator:'like',value:`%${arama}%`}];}
-  const res=await diaCall('scf/json',{scf_fatura_listele:{session_id:sid,firma_kodu:DIA_FIRMA,donem_kodu:DIA_DONEM,filters,sorts,limit,offset:0}});
+  const res=await diaCallK('scf/json',{scf_fatura_listele:{session_id:sid,firma_kodu:DIA_FIRMA,donem_kodu:DIA_DONEM,filters,sorts,limit,offset:0}});
   return JSON.stringify(res.result||[]);
 }
 
 async function execCek({arama,limit=20}){
-  const sid=await diaLogin();const a=arama.toLowerCase().trim();
+  const sid=await diaLoginK();const a=arama.toLowerCase().trim();
   const today=new Date().toISOString().split('T')[0];
   const nw=new Date(Date.now()+7*86400000).toISOString().split('T')[0];
   const nm=new Date(Date.now()+30*86400000).toISOString().split('T')[0];
   if(a==='ozet'||a==='portfoy_ozet'){
-    const res=await diaCall('bcs/json',{bcs_ceksenet_listele:{session_id:sid,firma_kodu:DIA_FIRMA,donem_kodu:DIA_DONEM,filters:[],sorts:[{field:'vade',sorttype:'ASC'}],params:{__selectHeader:['ceksenetno','vade','tutar','cariadi','banka','durum']},limit:500,offset:0}});
-    const all=res.result||[];const p=all.filter(r=>r.durum==='Portföyde');
+    const res=await diaCallK('bcs/json',{bcs_ceksenet_listele:{session_id:sid,firma_kodu:DIA_FIRMA,donem_kodu:DIA_DONEM,filters:[],sorts:[{field:'vade',sorttype:'ASC'}],params:{__selectHeader:['ceksenetno','vade','tutar','cariadi','banka','durum']},limit:500,offset:0}});
+    const all=res.result||[];const p=all.filter(r=>r.durum==='PortfÃ¶yde');
     return JSON.stringify({toplam:all.length,portfoyde:{adet:p.length,toplam:p.reduce((s,r)=>s+Number(r.tutar||0),0)},yaklasan:p.filter(r=>r.vade>=today&&r.vade<=nm).slice(0,10)});
   }
-  let filters=[{field:'durum',operator:'=',value:'Portföyde'}];
+  let filters=[{field:'durum',operator:'=',value:'PortfÃ¶yde'}];
   if(a==='bu_hafta'||a==='vadesi_yaklasan')filters.push({field:'vade',operator:'>=',value:today},{field:'vade',operator:'<=',value:nw});
   else if(a==='bu_ay')filters.push({field:'vade',operator:'>=',value:today},{field:'vade',operator:'<=',value:nm});
   else if(a==='gecikmis')filters.push({field:'vade',operator:'<',value:today});
   else if(a!=='hepsi')filters=[{field:'cariadi',operator:'like',value:`%${arama}%`}];
-  const res=await diaCall('bcs/json',{bcs_ceksenet_listele:{session_id:sid,firma_kodu:DIA_FIRMA,donem_kodu:DIA_DONEM,filters,sorts:[{field:'vade',sorttype:'ASC'}],params:{__selectHeader:['ceksenetno','vade','tutar','cariadi','banka','durum']},limit,offset:0}});
+  const res=await diaCallK('bcs/json',{bcs_ceksenet_listele:{session_id:sid,firma_kodu:DIA_FIRMA,donem_kodu:DIA_DONEM,filters,sorts:[{field:'vade',sorttype:'ASC'}],params:{__selectHeader:['ceksenetno','vade','tutar','cariadi','banka','durum']},limit,offset:0}});
   return JSON.stringify(res.result||[]);
 }
 
@@ -201,14 +201,14 @@ async function execVergi({ islem, ay, yil }) {
     const targetYear = ay ? currentYear : (now.getMonth() === 0 ? currentYear - 1 : currentYear);
     const monthStart = `${targetYear}-${String(targetMonth).padStart(2, '0')}-01`;
     const nextMonth = targetMonth === 12 ? `${targetYear + 1}-01-01` : `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-01`;
-    const ayIsimleri = ['', 'Ocak', 'Åubat', 'Mart', 'Nisan', 'MayÄ±s', 'Haziran', 'Temmuz', 'AÄustos', 'EylÃ¼l', 'Ekim', 'KasÄ±m', 'AralÄ±k'];
+    const ayIsimleri = ['', 'Ocak', 'ÃÂubat', 'Mart', 'Nisan', 'MayÃÂ±s', 'Haziran', 'Temmuz', 'AÃÂustos', 'EylÃÂ¼l', 'Ekim', 'KasÃÂ±m', 'AralÃÂ±k'];
     const { data } = await supabase.from('invoices').select('fatura_turu, toplam_tl, genel_toplam_tl').gte('tarih', monthStart).lt('tarih', nextMonth);
-    if (!data || data.length === 0) return JSON.stringify({ ay: ayIsimleri[targetMonth], yil: targetYear, mesaj: 'Bu ay iÃ§in fatura verisi bulunamadÄ±.' });
+    if (!data || data.length === 0) return JSON.stringify({ ay: ayIsimleri[targetMonth], yil: targetYear, mesaj: 'Bu ay iÃÂ§in fatura verisi bulunamadÃÂ±.' });
     let satis_kdv = 0, alis_kdv = 0, satis_tutar = 0, alis_tutar = 0, satis_adet = 0, alis_adet = 0;
     for (const r of data) {
       const kdv = Number(r.genel_toplam_tl || 0) - Number(r.toplam_tl || 0);
       const tur = (r.fatura_turu || '').toLowerCase();
-      if (tur.includes('satÄ±Å') || tur.includes('fiyat farkÄ± verilen')) { satis_kdv += kdv; satis_tutar += Number(r.genel_toplam_tl || 0); satis_adet++; }
+      if (tur.includes('satÃÂ±ÃÂ') || tur.includes('fiyat farkÃÂ± verilen')) { satis_kdv += kdv; satis_tutar += Number(r.genel_toplam_tl || 0); satis_adet++; }
       else { alis_kdv += kdv; alis_tutar += Number(r.genel_toplam_tl || 0); alis_adet++; }
     }
     const odenecek = satis_kdv - alis_kdv;
@@ -230,7 +230,7 @@ async function execVergi({ islem, ay, yil }) {
     return JSON.stringify({ bugun: today, yaklasan_vergiler: yaklasan.sort((a, b) => a.kalan_gun - b.kalan_gun) });
   }
   if (islem === 'takvim') { const { data } = await supabase.from('tax_calendar').select('*').eq('aktif', true).order('kategori'); return JSON.stringify(data || []); }
-  return JSON.stringify({ hata: 'GeÃ§ersiz iÅlem.' });
+  return JSON.stringify({ hata: 'GeÃÂ§ersiz iÃÂlem.' });
 }
 
 async function execUrunKarlilik({ arama, limit = 10 }) {
@@ -252,7 +252,7 @@ async function execUrunKarlilik({ arama, limit = 10 }) {
 
 async function execBilgiSorgula({ arama }) {
   const { data } = await supabase.from('knowledge').select('*').or(`content.ilike.%${arama}%,title.ilike.%${arama}%,category.ilike.%${arama}%`).limit(10);
-  if (!data || data.length === 0) { const words = arama.split(/\s+/).filter(w => w.length > 2); for (const word of words) { const { data: d } = await supabase.from('knowledge').select('*').ilike('content', `%${word}%`).limit(10); if (d && d.length > 0) return JSON.stringify(d); } return JSON.stringify({ sonuc: 'Bilgi bulunamadÄ±.' }); }
+  if (!data || data.length === 0) { const words = arama.split(/\s+/).filter(w => w.length > 2); for (const word of words) { const { data: d } = await supabase.from('knowledge').select('*').ilike('content', `%${word}%`).limit(10); if (d && d.length > 0) return JSON.stringify(d); } return JSON.stringify({ sonuc: 'Bilgi bulunamadÃÂ±.' }); }
   return JSON.stringify(data);
 }
 
@@ -264,10 +264,10 @@ async function execBilgiEkle({ kategori, baslik, icerik }) {
 
 // ==================== KARLILIK RAPORU ====================
 const DIA_URL_K = `https://${process.env.DIA_SERVER}.ws.dia.com.tr/api/v3`;
-const SATIS_TURLERI = ['Toptan SatÄ±Å', 'Perakende SatÄ±Å', 'Verilen Hizmet'];
-const IADE_TURLERI  = ['Toptan SatÄ±Å Ä°ade', 'Perakende SatÄ±Å Ä°ade', 'AlÄ±nan Fiyat FarkÄ±', 'Verilen Fiyat FarkÄ±'];
-const GIDER_TURLERI = ['AlÄ±nan Hizmet', 'Mal AlÄ±m'];
-const AY_ADLARI = ['','Ocak','Åubat','Mart','Nisan','MayÄ±s','Haziran','Temmuz','AÄustos','EylÃ¼l','Ekim','KasÄ±m','AralÄ±k'];
+const SATIS_TURLERI = ['Toptan SatÃÂ±ÃÂ', 'Perakende SatÃÂ±ÃÂ', 'Verilen Hizmet'];
+const IADE_TURLERI  = ['Toptan SatÃÂ±ÃÂ ÃÂ°ade', 'Perakende SatÃÂ±ÃÂ ÃÂ°ade', 'AlÃÂ±nan Fiyat FarkÃÂ±', 'Verilen Fiyat FarkÃÂ±'];
+const GIDER_TURLERI = ['AlÃÂ±nan Hizmet', 'Mal AlÃÂ±m'];
+const AY_ADLARI = ['','Ocak','ÃÂubat','Mart','Nisan','MayÃÂ±s','Haziran','Temmuz','AÃÂustos','EylÃÂ¼l','Ekim','KasÃÂ±m','AralÃÂ±k'];
 
 async function diaCallK(endpoint, body) {
   const res = await fetch(`${DIA_URL_K}/${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -284,7 +284,7 @@ async function diaLoginK() {
 function formatPara(n) { return Number(n||0).toLocaleString('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }); }
 
 async function karlilikRaporuCek(chatId, ayParam) {
-  await sendHtml(chatId, 'â³ KarlÄ±lÄ±k raporu hazÄ±rlanÄ±yor...');
+  await sendHtml(chatId, 'Ã¢ÂÂ³ KarlÃÂ±lÃÂ±k raporu hazÃÂ±rlanÃÂ±yor...');
   const sessionId = await diaLoginK();
   const simdi = new Date();
   const yil = simdi.getFullYear();
@@ -326,15 +326,15 @@ async function karlilikRaporuCek(chatId, ayParam) {
   const top5 = Object.entries(cariMap).sort((a, b) => b[1].kar - a[1].kar).slice(0, 5);
   const marj = toplamCiro > 0 ? ((toplamKar / toplamCiro) * 100).toFixed(1) : '0.0';
 
-  let msg = `ð <b>KarlÄ±lÄ±k Raporu â ${AY_ADLARI[parseInt(ayNo)]} ${yil}</b>\n<i>${basTar} â ${bitTar}</i>\n\n`;
-  msg += `ð° <b>Ciro:</b> ${formatPara(toplamCiro)} âº\nð¦ <b>Maliyet:</b> ${formatPara(toplamMaliyet)} âº\nâ <b>Kar:</b> ${formatPara(toplamKar)} âº (%${marj})\n`;
+  let msg = `Ã°ÂÂÂ <b>KarlÃÂ±lÃÂ±k Raporu Ã¢ÂÂ ${AY_ADLARI[parseInt(ayNo)]} ${yil}</b>\n<i>${basTar} Ã¢ÂÂ ${bitTar}</i>\n\n`;
+  msg += `Ã°ÂÂÂ° <b>Ciro:</b> ${formatPara(toplamCiro)} Ã¢ÂÂº\nÃ°ÂÂÂ¦ <b>Maliyet:</b> ${formatPara(toplamMaliyet)} Ã¢ÂÂº\nÃ¢ÂÂ <b>Kar:</b> ${formatPara(toplamKar)} Ã¢ÂÂº (%${marj})\n`;
   if (top5.length > 0) {
-    msg += `\nð <b>En KarlÄ± 5 Cari:</b>\n`;
-    for (const [ad, v] of top5) { const cMarj = v.ciro > 0 ? ((v.kar / v.ciro) * 100).toFixed(0) : 0; msg += `  â¢ ${ad}: ${formatPara(v.kar)} âº (%${cMarj})\n`; }
+    msg += `\nÃ°ÂÂÂ <b>En KarlÃÂ± 5 Cari:</b>\n`;
+    for (const [ad, v] of top5) { const cMarj = v.ciro > 0 ? ((v.kar / v.ciro) * 100).toFixed(0) : 0; msg += `  Ã¢ÂÂ¢ ${ad}: ${formatPara(v.kar)} Ã¢ÂÂº (%${cMarj})\n`; }
   }
   if (sifirMaliyetUyari.length > 0) {
-    msg += `\nâ ï¸ <b>Maliyetsiz SatÄ±Å (${sifirMaliyetUyari.length} fatura):</b>\n`;
-    for (const u of sifirMaliyetUyari.slice(0, 5)) msg += `  â¢ ${u}\n`;
+    msg += `\nÃ¢ÂÂ Ã¯Â¸Â <b>Maliyetsiz SatÃÂ±ÃÂ (${sifirMaliyetUyari.length} fatura):</b>\n`;
+    for (const u of sifirMaliyetUyari.slice(0, 5)) msg += `  Ã¢ÂÂ¢ ${u}\n`;
     if (sifirMaliyetUyari.length > 5) msg += `  ... ve ${sifirMaliyetUyari.length - 5} fatura daha\n`;
   }
   await sendHtml(chatId, msg);
@@ -347,33 +347,33 @@ async function generateMorningReport() {
   const today = new Date().toISOString().split('T')[0];
   const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
   const next7 = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
-  let r = `ð *GÃNLÃK RAPOR â ${today}*\nââââââââââââââââââââââ\n\n`;
+  let r = `Ã°ÂÂÂ *GÃÂNLÃÂK RAPOR Ã¢ÂÂ ${today}*\nÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ\n\n`;
   const { data: bugun } = await supabase.from('checks').select('*').eq('vade', today).order('tutar',{ascending:false});
-  if (bugun?.length > 0) { r += `ð´ *BUGÃN VADESÄ° DOLAN (${bugun.length} adet â ${fmtMoney(bugun.reduce((s,c)=>s+(c.tutar||0),0))} TL)*\n`; bugun.forEach((c,i) => { r += `${i+1}. ${c.borclu||'-'} â ${fmtMoney(c.tutar)} ${c.doviz} | ${c.durum_aciklama||''}\n`; }); r += '\n'; }
-  else r += 'â BugÃ¼n vadesi dolan Ã§ek yok.\n\n';
+  if (bugun?.length > 0) { r += `Ã°ÂÂÂ´ *BUGÃÂN VADESÃÂ° DOLAN (${bugun.length} adet Ã¢ÂÂ ${fmtMoney(bugun.reduce((s,c)=>s+(c.tutar||0),0))} TL)*\n`; bugun.forEach((c,i) => { r += `${i+1}. ${c.borclu||'-'} Ã¢ÂÂ ${fmtMoney(c.tutar)} ${c.doviz} | ${c.durum_aciklama||''}\n`; }); r += '\n'; }
+  else r += 'Ã¢ÂÂ BugÃÂ¼n vadesi dolan ÃÂ§ek yok.\n\n';
   const { data: yarin } = await supabase.from('checks').select('*').eq('vade', tomorrow).order('tutar',{ascending:false});
-  if (yarin?.length > 0) { r += `â ï¸ *YARIN (${yarin.length} adet â ${fmtMoney(yarin.reduce((s,c)=>s+(c.tutar||0),0))} TL)*\n`; yarin.forEach((c,i) => { r += `${i+1}. ${c.borclu||'-'} â ${fmtMoney(c.tutar)} ${c.doviz}\n`; }); r += '\n'; }
+  if (yarin?.length > 0) { r += `Ã¢ÂÂ Ã¯Â¸Â *YARIN (${yarin.length} adet Ã¢ÂÂ ${fmtMoney(yarin.reduce((s,c)=>s+(c.tutar||0),0))} TL)*\n`; yarin.forEach((c,i) => { r += `${i+1}. ${c.borclu||'-'} Ã¢ÂÂ ${fmtMoney(c.tutar)} ${c.doviz}\n`; }); r += '\n'; }
   const { data: hafta } = await supabase.from('checks').select('*').gte('vade', today).lte('vade', next7);
-  if (hafta?.length > 0) r += `ð *7 GÃNLÃK TOPLAM: ${fmtMoney(hafta.reduce((s,c)=>s+(c.tutar||0),0))} TL (${hafta.length} Ã§ek)*\n\n`;
-  const { data: gecik } = await supabase.from('checks').select('*').lt('vade', today).eq('durum_aciklama', 'PortfÃ¶yde').order('vade',{ascending:true});
-  if (gecik?.length > 0) { r += `ð¨ *GECÄ°KMÄ°Å (${gecik.length} adet â ${fmtMoney(gecik.reduce((s,c)=>s+(c.tutar||0),0))} TL)*\n`; gecik.slice(0,5).forEach((c,i) => { r += `${i+1}. ${c.vade} | ${c.borclu||'-'} â ${fmtMoney(c.tutar)} ${c.doviz}\n`; }); if (gecik.length > 5) r += ` ... ve ${gecik.length-5} Ã§ek daha\n`; r += '\n'; }
-  r += `ââââââââââââââââââââââ\n_OpenClaw Agent â Napol Global_`;
+  if (hafta?.length > 0) r += `Ã°ÂÂÂ *7 GÃÂNLÃÂK TOPLAM: ${fmtMoney(hafta.reduce((s,c)=>s+(c.tutar||0),0))} TL (${hafta.length} ÃÂ§ek)*\n\n`;
+  const { data: gecik } = await supabase.from('checks').select('*').lt('vade', today).eq('durum_aciklama', 'PortfÃÂ¶yde').order('vade',{ascending:true});
+  if (gecik?.length > 0) { r += `Ã°ÂÂÂ¨ *GECÃÂ°KMÃÂ°ÃÂ (${gecik.length} adet Ã¢ÂÂ ${fmtMoney(gecik.reduce((s,c)=>s+(c.tutar||0),0))} TL)*\n`; gecik.slice(0,5).forEach((c,i) => { r += `${i+1}. ${c.vade} | ${c.borclu||'-'} Ã¢ÂÂ ${fmtMoney(c.tutar)} ${c.doviz}\n`; }); if (gecik.length > 5) r += ` ... ve ${gecik.length-5} ÃÂ§ek daha\n`; r += '\n'; }
+  r += `Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ\n_OpenClaw Agent Ã¢ÂÂ Napol Global_`;
   return r;
 }
 
 // ==================== AGENT CORE ====================
-const SYSTEM_PROMPT = `Sen OpenClaw, Napol Global Åirketinin AI agent asistanÄ±sÄ±n. Napol Global; silikonlu kaÄÄ±t, silikonlu film ve medikal ambalaj kaÄÄ±tlarÄ± Ã¼retim/ticareti yapan bir Åirket.
-KRÄ°TÄ°K KURALLAR â BORÃ/ALACAL:
-- VeritabanÄ±ndaki bakiye sÃ¼tunu: NEGATÄ°F = BÄ°Z O FÄ°RMAYA BORÃLUYUZ (tedarikÃ§ilerimiz)
-- VeritabanÄ±ndaki bakiye sÃ¼tunu: POZÄ°TÄ°F = O FÄ°RMA BÄ°ZE BORÃLU (mÃ¼Återilerimiz)
+const SYSTEM_PROMPT = `Sen OpenClaw, Napol Global ÃÂirketinin AI agent asistanÃÂ±sÃÂ±n. Napol Global; silikonlu kaÃÂÃÂ±t, silikonlu film ve medikal ambalaj kaÃÂÃÂ±tlarÃÂ± ÃÂ¼retim/ticareti yapan bir ÃÂirket.
+KRÃÂ°TÃÂ°K KURALLAR Ã¢ÂÂ BORÃÂ/ALACAL:
+- VeritabanÃÂ±ndaki bakiye sÃÂ¼tunu: NEGATÃÂ°F = BÃÂ°Z O FÃÂ°RMAYA BORÃÂLUYUZ (tedarikÃÂ§ilerimiz)
+- VeritabanÃÂ±ndaki bakiye sÃÂ¼tunu: POZÃÂ°TÃÂ°F = O FÃÂ°RMA BÃÂ°ZE BORÃÂLU (mÃÂ¼ÃÂterilerimiz)
 GENEL KURALLAR:
-- TÃ¼rkÃ§e cevap ver. KÄ±sa, net ve profesyonel ol.
-- SayÄ±larÄ± TÃ¼rk formatÄ±nda gÃ¶ster: 1.234.567,89 TL
-- Kar oranÄ±nÄ± her zaman Kar/SatÄ±Å TutarÄ± olarak hesapla
-- KDV hesabÄ± yapÄ±lacaksa mutlaka hangi ay iÃ§in olduÄunu kullanÄ±cÄ±ya sor
+- TÃÂ¼rkÃÂ§e cevap ver. KÃÂ±sa, net ve profesyonel ol.
+- SayÃÂ±larÃÂ± TÃÂ¼rk formatÃÂ±nda gÃÂ¶ster: 1.234.567,89 TL
+- Kar oranÃÂ±nÃÂ± her zaman Kar/SatÃÂ±ÃÂ TutarÃÂ± olarak hesapla
+- KDV hesabÃÂ± yapÃÂ±lacaksa mutlaka hangi ay iÃÂ§in olduÃÂunu kullanÃÂ±cÃÂ±ya sor
 - Asla uydurma veri verme
-- Emoji kullan: ð´ borÃ§, ð° alacak, â denk, ð¦ stok, ð fatura, ð Ã§ek, ð karlÄ±lÄ±k
-BugÃ¼nÃ¼n tarihi: ${new Date().toISOString().split('T')[0]}`;
+- Emoji kullan: Ã°ÂÂÂ´ borÃÂ§, Ã°ÂÂÂ° alacak, Ã¢ÂÂ denk, Ã°ÂÂÂ¦ stok, Ã°ÂÂÂ fatura, Ã°ÂÂÂ ÃÂ§ek, Ã°ÂÂÂ karlÃÂ±lÃÂ±k
+BugÃÂ¼nÃÂ¼n tarihi: ${new Date().toISOString().split('T')[0]}`;
 
 async function runAgent(userMessage) {
   const messages = [{ role: 'user', content: userMessage }];
@@ -389,7 +389,7 @@ async function runAgent(userMessage) {
     messages.push({ role: 'user', content: toolResults });
     response = await claude.messages.create({ model: 'claude-sonnet-4-20250514', max_tokens: 2000, system: SYSTEM_PROMPT, tools: AGENT_TOOLS, messages });
   }
-  return response.content.filter(b => b.type === 'text').map(b => b.text).join('\n') || 'Cevap oluÅturulamadÄ±.';
+  return response.content.filter(b => b.type === 'text').map(b => b.text).join('\n') || 'Cevap oluÃÂturulamadÃÂ±.';
 }
 
 // ==================== MAIN WEBHOOK ====================
@@ -405,51 +405,51 @@ module.exports = async function handler(req, res) {
     const cleanText = text.replace(/@\w+/g, '').replace(/^\/\w+\s*/, '').trim();
     const command = text.split(' ')[0].split('@')[0].toLowerCase();
     const user = await getOrCreateUser(msg.from);
-    if (!user || !user.is_active) { await send(chatId, 'ð« EriÅim yetkiniz yok.'); return res.status(200).json({ ok: true }); }
+    if (!user || !user.is_active) { await send(chatId, 'Ã°ÂÂÂ« EriÃÂim yetkiniz yok.'); return res.status(200).json({ ok: true }); }
 
     // ---- Limitsiz komutlar ----
     if (command === '/start') {
-      await send(chatId, `ð¤ Merhaba ${user.full_name}!\n\nBen *OpenClaw Agent*, Napol Global Åirket asistanÄ±yÄ±m.\n\nð /rapor â GÃ¼nlÃ¼k rapor\nð /karlilik â Bu ayÄ±n karlÄ±lÄ±k raporu\nð /limit â Limit durumu\nð /ogren â Bilgi ekle\nâ /yardim â YardÄ±m`);
+      await send(chatId, `Ã°ÂÂ¤Â Merhaba ${user.full_name}!\n\nBen *OpenClaw Agent*, Napol Global ÃÂirket asistanÃÂ±yÃÂ±m.\n\nÃ°ÂÂÂ /rapor Ã¢ÂÂ GÃÂ¼nlÃÂ¼k rapor\nÃ°ÂÂÂ /karlilik Ã¢ÂÂ Bu ayÃÂ±n karlÃÂ±lÃÂ±k raporu\nÃ°ÂÂÂ /limit Ã¢ÂÂ Limit durumu\nÃ°ÂÂÂ /ogren Ã¢ÂÂ Bilgi ekle\nÃ¢ÂÂ /yardim Ã¢ÂÂ YardÃÂ±m`);
       await logQuery(msg.from.id, 'start', text, ''); return res.status(200).json({ ok: true });
     }
     if (command === '/yardim' || command === '/help') {
-      await send(chatId, `ð *OpenClaw Agent Rehberi*\n\nDoÄal dilde soru sorun:\nð¢ Cari, ð¦ Stok, ð Fatura, ð Ãek, ð KarlÄ±lÄ±k\n\nð /karlilik â Bu ay karlÄ±lÄ±k\nð /karlilik 03 â Mart ayÄ± karlÄ±lÄ±k\nð /rapor â GÃ¼nlÃ¼k rapor\nð /ogren [bilgi] â Bilgi ekle`);
+      await send(chatId, `Ã°ÂÂÂ *OpenClaw Agent Rehberi*\n\nDoÃÂal dilde soru sorun:\nÃ°ÂÂÂ¢ Cari, Ã°ÂÂÂ¦ Stok, Ã°ÂÂÂ Fatura, Ã°ÂÂÂ ÃÂek, Ã°ÂÂÂ KarlÃÂ±lÃÂ±k\n\nÃ°ÂÂÂ /karlilik Ã¢ÂÂ Bu ay karlÃÂ±lÃÂ±k\nÃ°ÂÂÂ /karlilik 03 Ã¢ÂÂ Mart ayÃÂ± karlÃÂ±lÃÂ±k\nÃ°ÂÂÂ /rapor Ã¢ÂÂ GÃÂ¼nlÃÂ¼k rapor\nÃ°ÂÂÂ /ogren [bilgi] Ã¢ÂÂ Bilgi ekle`);
       await logQuery(msg.from.id, 'help', text, ''); return res.status(200).json({ ok: true });
     }
     if (command === '/limit') {
       const l = await checkLimits(msg.from.id);
-      await send(chatId, `ð *Limit Durumu*\nð¤ GÃ¼nlÃ¼k: ${l.daily || 0}/${DAILY_LIMIT}\nð° AylÄ±k: ~$${l.monthly || 0} / $${MONTHLY_BUDGET_USD}`);
+      await send(chatId, `Ã°ÂÂÂ *Limit Durumu*\nÃ°ÂÂÂ¤ GÃÂ¼nlÃÂ¼k: ${l.daily || 0}/${DAILY_LIMIT}\nÃ°ÂÂÂ° AylÃÂ±k: ~$${l.monthly || 0} / $${MONTHLY_BUDGET_USD}`);
       return res.status(200).json({ ok: true });
     }
 
-    // ---- Admin komutlarÄ± ----
+    // ---- Admin komutlarÃÂ± ----
     if (command === '/rapor') {
-      if (user.role !== 'admin') { await send(chatId, 'ð« Bu komut sadece yÃ¶neticiler iÃ§indir.'); return res.status(200).json({ ok: true }); }
+      if (user.role !== 'admin') { await send(chatId, 'Ã°ÂÂÂ« Bu komut sadece yÃÂ¶neticiler iÃÂ§indir.'); return res.status(200).json({ ok: true }); }
       await typing(chatId);
       const report = await generateMorningReport();
       await send(chatId, report);
-      await logQuery(msg.from.id, 'rapor', text, 'GÃ¼nlÃ¼k rapor');
+      await logQuery(msg.from.id, 'rapor', text, 'GÃÂ¼nlÃÂ¼k rapor');
       return res.status(200).json({ ok: true });
     }
 
-    // ---- YENÄ°: KarlÄ±lÄ±k raporu komutu ----
+    // ---- YENÃÂ°: KarlÃÂ±lÃÂ±k raporu komutu ----
     if (command === '/karlilik') {
-      if (user.role !== 'admin') { await send(chatId, 'ð« Bu komut sadece yÃ¶neticiler iÃ§indir.'); return res.status(200).json({ ok: true }); }
-      const ayParam = text.split(' ')[1] || null; // /karlilik 04 â '04'
+      if (user.role !== 'admin') { await send(chatId, 'Ã°ÂÂÂ« Bu komut sadece yÃÂ¶neticiler iÃÂ§indir.'); return res.status(200).json({ ok: true }); }
+      const ayParam = text.split(' ')[1] || null; // /karlilik 04 Ã¢ÂÂ '04'
       try {
         await karlilikRaporuCek(chatId, ayParam);
       } catch (err) {
-        console.error('KarlÄ±lÄ±k raporu hata:', err);
-        await sendHtml(chatId, `â KarlÄ±lÄ±k raporu hatasÄ±: ${err.message}`);
+        console.error('KarlÃÂ±lÃÂ±k raporu hata:', err);
+        await sendHtml(chatId, `Ã¢ÂÂ KarlÃÂ±lÃÂ±k raporu hatasÃÂ±: ${err.message}`);
       }
-      await logQuery(msg.from.id, 'karlilik', text, 'KarlÄ±lÄ±k raporu');
+      await logQuery(msg.from.id, 'karlilik', text, 'KarlÃÂ±lÃÂ±k raporu');
       return res.status(200).json({ ok: true });
     }
 
     if (command === '/ogren') {
-      if (!cleanText) { await send(chatId, 'ð KullanÄ±m: /ogren [bilgi]'); return res.status(200).json({ ok: true }); }
+      if (!cleanText) { await send(chatId, 'Ã°ÂÂÂ KullanÃÂ±m: /ogren [bilgi]'); return res.status(200).json({ ok: true }); }
       await typing(chatId);
-      const result = await runAgent(`KullanÄ±cÄ± Åu bilgiyi eklemek istiyor: "${cleanText}". Uygun kategori belirle ve bilgi_ekle aracÄ±nÄ± kullan.`);
+      const result = await runAgent(`KullanÃÂ±cÃÂ± ÃÂu bilgiyi eklemek istiyor: "${cleanText}". Uygun kategori belirle ve bilgi_ekle aracÃÂ±nÃÂ± kullan.`);
       await send(chatId, result);
       await logQuery(msg.from.id, 'ogren', text, result);
       return res.status(200).json({ ok: true });
