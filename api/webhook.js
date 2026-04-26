@@ -230,7 +230,7 @@ async function karlilikRaporuCek(chatId, basTarih, bitTarih) {
   const basTar = basTarih || `${simdi.getFullYear()}-${String(simdi.getMonth()+1).padStart(2,'0')}-01`;
   const bitTar = bitTarih || new Date(simdi.getFullYear(), simdi.getMonth()+1, 0).toISOString().split('T')[0];
   const sessionId = await diaLoginK();
-  const res = await diaCallK('rpr/json', { rpr_raporsOnuc_getir: {
+  const res = await diaCallK('rpr/json', { rpr_raporsonuc_getir: {
     session_id: sessionId, firma_kodu: DIA_FIRMA_K, donem_kodu: DIA_DONEM_K,
     filters: '', sorts: '',
     params: { tasarim_key: parseInt(process.env.DIA_TASARIM||'807'), fistarihi1: basTar, fistarihi2: bitTar,
