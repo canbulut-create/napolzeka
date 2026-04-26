@@ -233,6 +233,7 @@ async function karlilikRaporuCek(chatId, basTarih, bitTarih) {
   const res = await diaCallK('rpr/json', { rpr_raporsonuc_getir: {
     session_id: sessionId, firma_kodu: DIA_FIRMA_K, donem_kodu: DIA_DONEM_K,
     filters: '', sorts: '',
+    format_type: 'json',
     params: { tasarim_key: parseInt(process.env.DIA_TASARIM||'807'), fistarihi1: basTar, fistarihi2: bitTar,
       maliyethesaplamaYontemi: 'Sadece Maliyet', _key_sis_depo: DIA_DEPO_K,
       perakende_satis: true, toptan_satis: true, alinan_fiyat_farki: true, verilen_fiyat_farki: true,
