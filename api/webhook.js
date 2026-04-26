@@ -52,12 +52,12 @@ async function checkLimits(telegramId) {
   const today = new Date().toISOString().split('T')[0];
   const { count: dailyCount } = await supabase.from('query_logs').select('*', { count: 'exact', head: true })
     .eq('user_id', telegramId).gte('created_at', today + 'T00:00:00').lte('created_at', today + 'T23:59:59');
-  if ((dailyCount || 0) >= DAILY_LIMIT) return { ok: false, msg: `ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ÃÂÃÂÃÂÃÂ¯ÃÂÃÂÃÂÃÂ¸ÃÂÃÂÃÂÃÂ GÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼nlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼k soru limitinize ulaÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂtÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±nÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±z (${DAILY_LIMIT}). YarÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±n tekrar deneyebilirsiniz.` };
+  if ((dailyCount || 0) >= DAILY_LIMIT) return { ok: false, msg: `ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¯ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¸ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ GÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼nlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼k soru limitinize ulaÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂtÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±nÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±z (${DAILY_LIMIT}). YarÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±n tekrar deneyebilirsiniz.` };
   const now = new Date();
   const monthStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01T00:00:00`;
   const { count: monthCount } = await supabase.from('query_logs').select('*', { count: 'exact', head: true })
     .gte('created_at', monthStart).not('query_type', 'in', '("start","help")');
-  if ((monthCount || 0) * COST_PER_QUERY >= MONTHLY_BUDGET_USD) return { ok: false, msg: `ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ÃÂÃÂÃÂÃÂ¯ÃÂÃÂÃÂÃÂ¸ÃÂÃÂÃÂÃÂ AylÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k API bÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼tÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ§esi doldu ($${MONTHLY_BUDGET_USD}).` };
+  if ((monthCount || 0) * COST_PER_QUERY >= MONTHLY_BUDGET_USD) return { ok: false, msg: `ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¯ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¸ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ AylÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k API bÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼tÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ§esi doldu ($${MONTHLY_BUDGET_USD}).` };
   return { ok: true, daily: dailyCount || 0, monthly: ((monthCount || 0) * COST_PER_QUERY).toFixed(2) };
 }
 
@@ -69,14 +69,14 @@ async function logQuery(telegramId, queryType, queryText, responseText) {
 
 // ==================== AGENT TOOLS ====================
 const AGENT_TOOLS = [
-  { name: "cari_sorgula", description: "Cari hesap/firma sorgulama. Bakiye NEGATÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°F = biz o firmaya borÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ§luyuz, POZÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°TÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°F = firma bize borÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ§lu.", input_schema: { type: "object", properties: { arama: { type: "string" }, limit: { type: "number" }, siralama: { type: "string" } }, required: ["arama"] } },
+  { name: "cari_sorgula", description: "Cari hesap/firma sorgulama. Bakiye NEGATÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°F = biz o firmaya borÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ§luyuz, POZÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°TÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°F = firma bize borÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ§lu.", input_schema: { type: "object", properties: { arama: { type: "string" }, limit: { type: "number" }, siralama: { type: "string" } }, required: ["arama"] } },
   { name: "stok_sorgula", description: "Depo stok sorgulama.", input_schema: { type: "object", properties: { arama: { type: "string" }, limit: { type: "number" } }, required: ["arama"] } },
   { name: "fatura_sorgula", description: "Fatura sorgulama.", input_schema: { type: "object", properties: { arama: { type: "string" }, tur: { type: "string" }, limit: { type: "number" } }, required: ["arama"] } },
-  { name: "cek_sorgula", description: "ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂek ve senet sorgulama.", input_schema: { type: "object", properties: { arama: { type: "string" }, limit: { type: "number" } }, required: ["arama"] } },
-  { name: "satis_karlilik_sorgula", description: "SatÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ karlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±lÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k analizi.", input_schema: { type: "object", properties: { arama: { type: "string" }, limit: { type: "number" } }, required: ["arama"] } },
-  { name: "bilgi_sorgula", description: "ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂirket bilgi tabanÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±nÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ± sorgula.", input_schema: { type: "object", properties: { arama: { type: "string" } }, required: ["arama"] } },
-  { name: "urun_karlilik_sorgula", description: "ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂrÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼n bazlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ± karlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±lÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k analizi.", input_schema: { type: "object", properties: { arama: { type: "string" }, limit: { type: "number" } }, required: ["arama"] } },
-  { name: "bilgi_ekle", description: "Bilgi tabanÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±na yeni bilgi ekle.", input_schema: { type: "object", properties: { kategori: { type: "string" }, baslik: { type: "string" }, icerik: { type: "string" } }, required: ["kategori", "icerik"] } },
+  { name: "cek_sorgula", description: "ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂek ve senet sorgulama.", input_schema: { type: "object", properties: { arama: { type: "string" }, limit: { type: "number" } }, required: ["arama"] } },
+  { name: "satis_karlilik_sorgula", description: "SatÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ karlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±lÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k analizi.", input_schema: { type: "object", properties: { arama: { type: "string" }, limit: { type: "number" } }, required: ["arama"] } },
+  { name: "bilgi_sorgula", description: "ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂirket bilgi tabanÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±nÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ± sorgula.", input_schema: { type: "object", properties: { arama: { type: "string" } }, required: ["arama"] } },
+  { name: "urun_karlilik_sorgula", description: "ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂrÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼n bazlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ± karlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±lÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k analizi.", input_schema: { type: "object", properties: { arama: { type: "string" }, limit: { type: "number" } }, required: ["arama"] } },
+  { name: "bilgi_ekle", description: "Bilgi tabanÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±na yeni bilgi ekle.", input_schema: { type: "object", properties: { kategori: { type: "string" }, baslik: { type: "string" }, icerik: { type: "string" } }, required: ["kategori", "icerik"] } },
   { name: "vergi_hesapla", description: "Vergi hesaplama ve takvim sorgulama.", input_schema: { type: "object", properties: { islem: { type: "string" }, ay: { type: "number" }, yil: { type: "number" } }, required: ["islem"] } }
 ];
 
@@ -93,7 +93,7 @@ async function executeTool(toolName, input) {
       case 'bilgi_ekle': return await execBilgiEkle(input);
       case 'urun_karlilik_sorgula': return await execUrunKarlilik(input);
       case 'vergi_hesapla': return await execVergi(input);
-      default: return JSON.stringify({ error: 'Bilinmeyen araÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ§' });
+      default: return JSON.stringify({ error: 'Bilinmeyen araÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ§' });
     }
   } catch (e) { console.error(`Tool error ${toolName}:`, e); return JSON.stringify({ error: e.message }); }
 }
@@ -101,7 +101,7 @@ async function executeTool(toolName, input) {
 async function execCari({arama, limit=10}) {
   const a = arama.toLowerCase().trim();
 
-  // ÃÂzet
+  // ÃÂÃÂzet
   if (a === 'ozet' || a === 'genel') {
     const { data } = await supabase.from('dia_cariler').select('bakiye');
     const rows = data || [];
@@ -116,29 +116,29 @@ async function execCari({arama, limit=10}) {
     });
   }
 
-  // En alacaklÃÂ± (bize borÃÂ§lu = pozitif)
+  // En alacaklÃÂÃÂ± (bize borÃÂÃÂ§lu = pozitif)
   if (a === 'en_alacakli' || a.includes('bize bor') || a.includes('en alacak') || a.includes('alacakl')) {
     const { data } = await supabase.from('dia_cariler').select('*').gt('bakiye', 0).order('bakiye', {ascending: false}).limit(limit);
-    return JSON.stringify((data||[]).map(r => ({...r, _durum: 'FÃÂ°RMA BÃÂ°ZE BORÃÂLU'})));
+    return JSON.stringify((data||[]).map(r => ({...r, _durum: 'FÃÂÃÂ°RMA BÃÂÃÂ°ZE BORÃÂÃÂLU'})));
   }
 
-  // En borÃÂ§lu (biz borÃÂ§luyuz = negatif)
-  if (a === 'en_borclu' || a.includes('en borÃÂ§') || a.includes('biz borÃÂ§')) {
+  // En borÃÂÃÂ§lu (biz borÃÂÃÂ§luyuz = negatif)
+  if (a === 'en_borclu' || a.includes('en borÃÂÃÂ§') || a.includes('biz borÃÂÃÂ§')) {
     const { data } = await supabase.from('dia_cariler').select('*').lt('bakiye', 0).order('bakiye', {ascending: true}).limit(limit);
-    return JSON.stringify((data||[]).map(r => ({...r, _durum: 'BÃÂ°Z BORÃÂLUYUZ'})));
+    return JSON.stringify((data||[]).map(r => ({...r, _durum: 'BÃÂÃÂ°Z BORÃÂÃÂLUYUZ'})));
   }
 
-  // ÃÂ°sme gÃÂ¶re arama - full text
+  // ÃÂÃÂ°sme gÃÂÃÂ¶re arama - full text
   const { data: d1 } = await supabase.from('dia_cariler').select('*').ilike('unvan', `%${arama}%`).limit(limit);
   if (d1 && d1.length > 0) {
-    return JSON.stringify(d1.map(r => ({...r, _durum: Number(r.bakiye) < 0 ? 'BÃÂ°Z BORÃÂLUYUZ' : Number(r.bakiye) > 0 ? 'FÃÂ°RMA BÃÂ°ZE BORÃÂLU' : 'DENK'})));
+    return JSON.stringify(d1.map(r => ({...r, _durum: Number(r.bakiye) < 0 ? 'BÃÂÃÂ°Z BORÃÂÃÂLUYUZ' : Number(r.bakiye) > 0 ? 'FÃÂÃÂ°RMA BÃÂÃÂ°ZE BORÃÂÃÂLU' : 'DENK'})));
   }
 
-  // Kelimelere bÃÂ¶l
+  // Kelimelere bÃÂÃÂ¶l
   const words = arama.split(/\s+/).filter(w => w.length > 2);
   for (const w of words) {
     const { data: dw } = await supabase.from('dia_cariler').select('*').ilike('unvan', `%${w}%`).limit(limit);
-    if (dw && dw.length > 0) return JSON.stringify(dw.map(r => ({...r, _durum: Number(r.bakiye) < 0 ? 'BÃÂ°Z BORÃÂLUYUZ' : Number(r.bakiye) > 0 ? 'FÃÂ°RMA BÃÂ°ZE BORÃÂLU' : 'DENK'})));
+    if (dw && dw.length > 0) return JSON.stringify(dw.map(r => ({...r, _durum: Number(r.bakiye) < 0 ? 'BÃÂÃÂ°Z BORÃÂÃÂLUYUZ' : Number(r.bakiye) > 0 ? 'FÃÂÃÂ°RMA BÃÂÃÂ°ZE BORÃÂÃÂLU' : 'DENK'})));
   }
   return JSON.stringify([]);
 }
@@ -164,7 +164,7 @@ async function execFatura({arama, limit=15}) {
   const now = new Date();
   let query = supabase.from('dia_faturalar').select('*');
 
-  if (a === 'bugun' || a === 'bugÃÂ¼n') {
+  if (a === 'bugun' || a === 'bugÃÂÃÂ¼n') {
     const today = now.toISOString().split('T')[0];
     query = query.eq('tarih', today);
   } else if (a === 'bu_ay' || a === 'bu ay') {
@@ -189,7 +189,7 @@ async function execCek({arama, limit=20}) {
   if (a === 'ozet' || a === 'portfoy_ozet') {
     const { data } = await supabase.from('dia_cekler').select('tutar, durum, vade');
     const all = data || [];
-    const portfoy = all.filter(r => r.durum && r.durum.includes('PortfÃÂ¶y'));
+    const portfoy = all.filter(r => r.durum && r.durum.includes('PortfÃÂÃÂ¶y'));
     return JSON.stringify({
       toplam: all.length,
       portfoyde: { adet: portfoy.length, toplam: portfoy.reduce((s,r) => s+Number(r.tutar||0), 0) },
@@ -250,14 +250,14 @@ async function execVergi({ islem, ay, yil }) {
     const targetYear = ay ? currentYear : (now.getMonth() === 0 ? currentYear - 1 : currentYear);
     const monthStart = `${targetYear}-${String(targetMonth).padStart(2, '0')}-01`;
     const nextMonth = targetMonth === 12 ? `${targetYear + 1}-01-01` : `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-01`;
-    const ayIsimleri = ['', 'Ocak', 'ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂubat', 'Mart', 'Nisan', 'MayÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±s', 'Haziran', 'Temmuz', 'AÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂustos', 'EylÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼l', 'Ekim', 'KasÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±m', 'AralÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k'];
+    const ayIsimleri = ['', 'Ocak', 'ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂubat', 'Mart', 'Nisan', 'MayÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±s', 'Haziran', 'Temmuz', 'AÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂustos', 'EylÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼l', 'Ekim', 'KasÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±m', 'AralÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k'];
     const { data } = await supabase.from('invoices').select('fatura_turu, toplam_tl, genel_toplam_tl').gte('tarih', monthStart).lt('tarih', nextMonth);
-    if (!data || data.length === 0) return JSON.stringify({ ay: ayIsimleri[targetMonth], yil: targetYear, mesaj: 'Bu ay iÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ§in fatura verisi bulunamadÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±.' });
+    if (!data || data.length === 0) return JSON.stringify({ ay: ayIsimleri[targetMonth], yil: targetYear, mesaj: 'Bu ay iÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ§in fatura verisi bulunamadÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±.' });
     let satis_kdv = 0, alis_kdv = 0, satis_tutar = 0, alis_tutar = 0, satis_adet = 0, alis_adet = 0;
     for (const r of data) {
       const kdv = Number(r.genel_toplam_tl || 0) - Number(r.toplam_tl || 0);
       const tur = (r.fatura_turu || '').toLowerCase();
-      if (tur.includes('satÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ') || tur.includes('fiyat farkÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ± verilen')) { satis_kdv += kdv; satis_tutar += Number(r.genel_toplam_tl || 0); satis_adet++; }
+      if (tur.includes('satÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ') || tur.includes('fiyat farkÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ± verilen')) { satis_kdv += kdv; satis_tutar += Number(r.genel_toplam_tl || 0); satis_adet++; }
       else { alis_kdv += kdv; alis_tutar += Number(r.genel_toplam_tl || 0); alis_adet++; }
     }
     const odenecek = satis_kdv - alis_kdv;
@@ -279,7 +279,7 @@ async function execVergi({ islem, ay, yil }) {
     return JSON.stringify({ bugun: today, yaklasan_vergiler: yaklasan.sort((a, b) => a.kalan_gun - b.kalan_gun) });
   }
   if (islem === 'takvim') { const { data } = await supabase.from('tax_calendar').select('*').eq('aktif', true).order('kategori'); return JSON.stringify(data || []); }
-  return JSON.stringify({ hata: 'GeÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ§ersiz iÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂlem.' });
+  return JSON.stringify({ hata: 'GeÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ§ersiz iÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂlem.' });
 }
 
 async function execUrunKarlilik({ arama, limit = 10 }) {
@@ -301,7 +301,7 @@ async function execUrunKarlilik({ arama, limit = 10 }) {
 
 async function execBilgiSorgula({ arama }) {
   const { data } = await supabase.from('knowledge').select('*').or(`content.ilike.%${arama}%,title.ilike.%${arama}%,category.ilike.%${arama}%`).limit(10);
-  if (!data || data.length === 0) { const words = arama.split(/\s+/).filter(w => w.length > 2); for (const word of words) { const { data: d } = await supabase.from('knowledge').select('*').ilike('content', `%${word}%`).limit(10); if (d && d.length > 0) return JSON.stringify(d); } return JSON.stringify({ sonuc: 'Bilgi bulunamadÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±.' }); }
+  if (!data || data.length === 0) { const words = arama.split(/\s+/).filter(w => w.length > 2); for (const word of words) { const { data: d } = await supabase.from('knowledge').select('*').ilike('content', `%${word}%`).limit(10); if (d && d.length > 0) return JSON.stringify(d); } return JSON.stringify({ sonuc: 'Bilgi bulunamadÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±.' }); }
   return JSON.stringify(data);
 }
 
@@ -313,10 +313,10 @@ async function execBilgiEkle({ kategori, baslik, icerik }) {
 
 // ==================== KARLILIK RAPORU ====================
 const DIA_URL_K = `https://${process.env.DIA_SERVER}.ws.dia.com.tr/api/v3`;
-const SATIS_TURLERI = ['Toptan SatÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ', 'Perakende SatÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ', 'Verilen Hizmet'];
-const IADE_TURLERI  = ['Toptan SatÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ade', 'Perakende SatÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ade', 'AlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±nan Fiyat FarkÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±', 'Verilen Fiyat FarkÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±'];
-const GIDER_TURLERI = ['AlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±nan Hizmet', 'Mal AlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±m'];
-const AY_ADLARI = ['','Ocak','ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂubat','Mart','Nisan','MayÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±s','Haziran','Temmuz','AÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂustos','EylÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼l','Ekim','KasÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±m','AralÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k'];
+const SATIS_TURLERI = ['Toptan SatÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ', 'Perakende SatÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ', 'Verilen Hizmet'];
+const IADE_TURLERI  = ['Toptan SatÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ade', 'Perakende SatÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ade', 'AlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±nan Fiyat FarkÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±', 'Verilen Fiyat FarkÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±'];
+const GIDER_TURLERI = ['AlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±nan Hizmet', 'Mal AlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±m'];
+const AY_ADLARI = ['','Ocak','ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂubat','Mart','Nisan','MayÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±s','Haziran','Temmuz','AÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂustos','EylÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼l','Ekim','KasÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±m','AralÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k'];
 
 async function diaCallK(endpoint, body) {
   const res = await fetch(`${DIA_URL_K}/${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -333,7 +333,7 @@ async function diaLoginK() {
 function formatPara(n) { return Number(n||0).toLocaleString('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }); }
 
 async function karlilikRaporuCek(chatId, basTarih, bitTarih) {
-  await sendHtml(chatId, '⏳ Karlılık raporu hazırlanıyor...');
+  await sendHtml(chatId, 'â³ KarlÄ±lÄ±k raporu hazÄ±rlanÄ±yor...');
   const sessionId = await diaLoginK();
   const simdi = new Date();
   const basTar = basTarih || `${simdi.getFullYear()}-${String(simdi.getMonth()+1).padStart(2,'0')}-01`;
@@ -373,15 +373,15 @@ async function karlilikRaporuCek(chatId, basTarih, bitTarih) {
   const top5 = Object.entries(cariMap).sort((a, b) => b[1].kar - a[1].kar).slice(0, 5);
   const marj = toplamCiro > 0 ? ((toplamKar / toplamCiro) * 100).toFixed(1) : '0.0';
 
-  let msg = `ÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ <b>KarlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±lÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k Raporu ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ${AY_ADLARI[parseInt(ayNo)]} ${yil}</b>\n<i>${basTar} ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ${bitTar}</i>\n\n`;
-  msg += `ÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ° <b>Ciro:</b> ${formatPara(toplamCiro)} ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂº\nÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¦ <b>Maliyet:</b> ${formatPara(toplamMaliyet)} ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂº\nÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ <b>Kar:</b> ${formatPara(toplamKar)} ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂº (%${marj})\n`;
+  let msg = `ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ <b>KarlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±lÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k Raporu ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ${AY_ADLARI[parseInt(ayNo)]} ${yil}</b>\n<i>${basTar} ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ${bitTar}</i>\n\n`;
+  msg += `ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ° <b>Ciro:</b> ${formatPara(toplamCiro)} ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂº\nÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¦ <b>Maliyet:</b> ${formatPara(toplamMaliyet)} ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂº\nÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ <b>Kar:</b> ${formatPara(toplamKar)} ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂº (%${marj})\n`;
   if (top5.length > 0) {
-    msg += `\nÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ <b>En KarlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ± 5 Cari:</b>\n`;
-    for (const [ad, v] of top5) { const cMarj = v.ciro > 0 ? ((v.kar / v.ciro) * 100).toFixed(0) : 0; msg += `  ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ ${ad}: ${formatPara(v.kar)} ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂº (%${cMarj})\n`; }
+    msg += `\nÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ <b>En KarlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ± 5 Cari:</b>\n`;
+    for (const [ad, v] of top5) { const cMarj = v.ciro > 0 ? ((v.kar / v.ciro) * 100).toFixed(0) : 0; msg += `  ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ ${ad}: ${formatPara(v.kar)} ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂº (%${cMarj})\n`; }
   }
   if (sifirMaliyetUyari.length > 0) {
-    msg += `\nÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ÃÂÃÂÃÂÃÂ¯ÃÂÃÂÃÂÃÂ¸ÃÂÃÂÃÂÃÂ <b>Maliyetsiz SatÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ (${sifirMaliyetUyari.length} fatura):</b>\n`;
-    for (const u of sifirMaliyetUyari.slice(0, 5)) msg += `  ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ ${u}\n`;
+    msg += `\nÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¯ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¸ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ <b>Maliyetsiz SatÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ (${sifirMaliyetUyari.length} fatura):</b>\n`;
+    for (const u of sifirMaliyetUyari.slice(0, 5)) msg += `  ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ ${u}\n`;
     if (sifirMaliyetUyari.length > 5) msg += `  ... ve ${sifirMaliyetUyari.length - 5} fatura daha\n`;
   }
   await sendHtml(chatId, msg);
@@ -394,33 +394,64 @@ async function generateMorningReport() {
   const today = new Date().toISOString().split('T')[0];
   const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
   const next7 = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
-  let r = `ÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ *GÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂNLÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂK RAPOR ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ${today}*\nÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ\n\n`;
-  const { data: bugun } = await supabase.from('checks').select('*').eq('vade', today).order('tutar',{ascending:false});
-  if (bugun?.length > 0) { r += `ÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ´ *BUGÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂN VADESÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ° DOLAN (${bugun.length} adet ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ${fmtMoney(bugun.reduce((s,c)=>s+(c.tutar||0),0))} TL)*\n`; bugun.forEach((c,i) => { r += `${i+1}. ${c.borclu||'-'} ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ${fmtMoney(c.tutar)} ${c.doviz} | ${c.durum_aciklama||''}\n`; }); r += '\n'; }
-  else r += 'ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ BugÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼n vadesi dolan ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ§ek yok.\n\n';
-  const { data: yarin } = await supabase.from('checks').select('*').eq('vade', tomorrow).order('tutar',{ascending:false});
-  if (yarin?.length > 0) { r += `ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ÃÂÃÂÃÂÃÂ¯ÃÂÃÂÃÂÃÂ¸ÃÂÃÂÃÂÃÂ *YARIN (${yarin.length} adet ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ${fmtMoney(yarin.reduce((s,c)=>s+(c.tutar||0),0))} TL)*\n`; yarin.forEach((c,i) => { r += `${i+1}. ${c.borclu||'-'} ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ${fmtMoney(c.tutar)} ${c.doviz}\n`; }); r += '\n'; }
-  const { data: hafta } = await supabase.from('checks').select('*').gte('vade', today).lte('vade', next7);
-  if (hafta?.length > 0) r += `ÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ *7 GÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂNLÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂK TOPLAM: ${fmtMoney(hafta.reduce((s,c)=>s+(c.tutar||0),0))} TL (${hafta.length} ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ§ek)*\n\n`;
-  const { data: gecik } = await supabase.from('checks').select('*').lt('vade', today).eq('durum_aciklama', 'PortfÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¶yde').order('vade',{ascending:true});
-  if (gecik?.length > 0) { r += `ÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¨ *GECÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°KMÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ (${gecik.length} adet ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ${fmtMoney(gecik.reduce((s,c)=>s+(c.tutar||0),0))} TL)*\n`; gecik.slice(0,5).forEach((c,i) => { r += `${i+1}. ${c.vade} | ${c.borclu||'-'} ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ${fmtMoney(c.tutar)} ${c.doviz}\n`; }); if (gecik.length > 5) r += ` ... ve ${gecik.length-5} ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ§ek daha\n`; r += '\n'; }
-  r += `ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ\n_OpenClaw Agent ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Napol Global_`;
+  let cepler = [];
+  try {
+    const sessionId = await diaLoginK();
+    const res = await diaCallK('bcs/json', {
+      bcs_ceksenet_listele: {
+        session_id: sessionId, firma_kodu: parseInt(process.env.DIA_FIRMA||'2'), donem_kodu: parseInt(process.env.DIA_DONEM||'3'),
+        filters: [{ field: 'durum', operator: '=', value: 'Portföyde' }],
+        sorts: [{ field: 'vade', sorttype: 'ASC' }],
+        params: { __selectHeader: ['ceksenetno','vade','tutar','cariadi','banka','durum'] },
+        limit: 200, offset: 0
+      }
+    });
+    cepler = res.result || [];
+  } catch(e) { console.error('Rapor hata:', e.message); }
+  
+  const bug = cepler.filter(x => x.vade === today);
+  const yar = cepler.filter(x => x.vade === tomorrow);
+  const haf = cepler.filter(x => x.vade >= today && x.vade <= next7);
+  const gec = cepler.filter(x => x.vade < today);
+  function fm(n){ return Number(n||0).toLocaleString('tr-TR',{minimumFractionDigits:0,maximumFractionDigits:0}); }
+  
+  let r = '🌅 <b>GÜNLÜK RAPOR — ' + today + '</b>
+━━━━━━━━━━━━━━━━━━
+
+';
+  if(bug.length>0){
+    r+='🔴 <b>Bugün (' + bug.length + ' adet — ' + fm(bug.reduce((s,x)=>s+(x.tutar||0),0)) + ' ₺)</b>
+';
+    bug.forEach((x,i)=>{r+=(i+1)+'. '+(x.cariadi||'-')+' — '+fm(x.tutar)+' ₺ | '+(x.banka||'')+'
+';});
+    r+='
+';
+  } else { r+='✅ Bugün vadesi dolan çek yok.
+
+'; }
+  if(yar.length>0){
+    r+='⚠️ <b>Yarın (' + yar.length + ' adet — ' + fm(yar.reduce((s,x)=>s+(x.tutar||0),0)) + ' ₺)</b>
+';
+    yar.forEach((x,i)=>{r+=(i+1)+'. '+(x.cariadi||'-')+' — '+fm(x.tutar)+' ₺
+';});
+    r+='
+';
+  }
+  if(haf.length>0) r+='📅 <b>7 GÜN: ' + fm(haf.reduce((s,x)=>s+(x.tutar||0),0)) + ' ₺ (' + haf.length + ' çek)</b>
+
+';
+  if(gec.length>0){
+    r+='🚨 <b>Geçikmiş (' + gec.length + ' adet — ' + fm(gec.reduce((s,x)=>s+(x.tutar||0),0)) + ' ₺)</b>
+';
+    gec.slice(0,5).forEach((x,i)=>{r+=(i+1)+'. '+x.vade+' | '+(x.cariadi||'-')+' — '+fm(x.tutar)+' ₺
+';});
+    if(gec.length>5) r+=' ...ve '+(gec.length-5)+' çek daha
+';
+  }
+  r+='━━━━━━━━━━━━━━━━━━
+<i>OpenClaw Agent — Napol Global</i>';
   return r;
 }
-
-// ==================== AGENT CORE ====================
-const SYSTEM_PROMPT = `Sen OpenClaw, Napol Global ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂirketinin AI agent asistanÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±sÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±n. Napol Global; silikonlu kaÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±t, silikonlu film ve medikal ambalaj kaÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±tlarÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ± ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼retim/ticareti yapan bir ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂirket.
-KRÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°TÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°K KURALLAR ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ BORÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ/ALACAL:
-- VeritabanÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±ndaki bakiye sÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼tunu: NEGATÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°F = BÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°Z O FÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°RMAYA BORÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂLUYUZ (tedarikÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ§ilerimiz)
-- VeritabanÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±ndaki bakiye sÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼tunu: POZÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°TÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°F = O FÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°RMA BÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ZE BORÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂLU (mÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂterilerimiz)
-GENEL KURALLAR:
-- TÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼rkÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ§e cevap ver. KÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±sa, net ve profesyonel ol.
-- SayÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±larÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ± TÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼rk formatÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±nda gÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¶ster: 1.234.567,89 TL
-- Kar oranÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±nÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ± her zaman Kar/SatÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ TutarÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ± olarak hesapla
-- KDV hesabÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ± yapÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±lacaksa mutlaka hangi ay iÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ§in olduÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂunu kullanÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±cÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±ya sor
-- Asla uydurma veri verme
-- Emoji kullan: ÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ´ borÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ§, ÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ° alacak, ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ denk, ÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¦ stok, ÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ fatura, ÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ§ek, ÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ karlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±lÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k
-BugÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼nÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼n tarihi: ${new Date().toISOString().split('T')[0]}`;
 
 async function runAgent(userMessage) {
   const messages = [{ role: 'user', content: userMessage }];
@@ -436,7 +467,7 @@ async function runAgent(userMessage) {
     messages.push({ role: 'user', content: toolResults });
     response = await claude.messages.create({ model: 'claude-sonnet-4-20250514', max_tokens: 2000, system: SYSTEM_PROMPT, tools: AGENT_TOOLS, messages });
   }
-  return response.content.filter(b => b.type === 'text').map(b => b.text).join('\n') || 'Cevap oluÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂturulamadÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±.';
+  return response.content.filter(b => b.type === 'text').map(b => b.text).join('\n') || 'Cevap oluÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂturulamadÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±.';
 }
 
 // ==================== MAIN WEBHOOK ====================
@@ -452,53 +483,53 @@ module.exports = async function handler(req, res) {
     const cleanText = text.replace(/@\w+/g, '').replace(/^\/\w+\s*/, '').trim();
     const command = text.split(' ')[0].split('@')[0].toLowerCase();
     const user = await getOrCreateUser(msg.from);
-    if (!user || !user.is_active) { await send(chatId, 'ÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ« EriÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂim yetkiniz yok.'); return res.status(200).json({ ok: true }); }
+    if (!user || !user.is_active) { await send(chatId, 'ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ« EriÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂim yetkiniz yok.'); return res.status(200).json({ ok: true }); }
 
     // ---- Limitsiz komutlar ----
     if (command === '/start') {
-      await send(chatId, `ÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¤ÃÂÃÂÃÂÃÂ Merhaba ${user.full_name}!\n\nBen *OpenClaw Agent*, Napol Global ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂirket asistanÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±yÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±m.\n\nÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ /rapor ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ GÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼nlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼k rapor\nÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ /karlilik ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Bu ayÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±n karlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±lÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k raporu\nÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ /limit ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Limit durumu\nÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ /ogren ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Bilgi ekle\nÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ /yardim ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ YardÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±m`);
+      await send(chatId, `ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¤ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Merhaba ${user.full_name}!\n\nBen *OpenClaw Agent*, Napol Global ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂirket asistanÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±yÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±m.\n\nÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ /rapor ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ GÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼nlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼k rapor\nÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ /karlilik ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Bu ayÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±n karlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±lÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k raporu\nÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ /limit ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Limit durumu\nÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ /ogren ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Bilgi ekle\nÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ /yardim ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ YardÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±m`);
       await logQuery(msg.from.id, 'start', text, ''); return res.status(200).json({ ok: true });
     }
     if (command === '/yardim' || command === '/help') {
-      await send(chatId, `ÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ *OpenClaw Agent Rehberi*\n\nDoÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂal dilde soru sorun:\nÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ Cari, ÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¦ Stok, ÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Fatura, ÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂek, ÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ KarlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±lÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k\n\nÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ /karlilik ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Bu ay karlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±lÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k\nÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ /karlilik 03 ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Mart ayÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ± karlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±lÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k\nÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ /rapor ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ GÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼nlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼k rapor\nÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ /ogren [bilgi] ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Bilgi ekle`);
+      await send(chatId, `ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ *OpenClaw Agent Rehberi*\n\nDoÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂal dilde soru sorun:\nÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ Cari, ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¦ Stok, ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Fatura, ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂek, ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ KarlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±lÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k\n\nÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ /karlilik ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Bu ay karlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±lÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k\nÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ /karlilik 03 ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Mart ayÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ± karlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±lÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k\nÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ /rapor ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ GÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼nlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼k rapor\nÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ /ogren [bilgi] ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ Bilgi ekle`);
       await logQuery(msg.from.id, 'help', text, ''); return res.status(200).json({ ok: true });
     }
     if (command === '/limit') {
       const l = await checkLimits(msg.from.id);
-      await send(chatId, `ÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ *Limit Durumu*\nÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¤ GÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼nlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼k: ${l.daily || 0}/${DAILY_LIMIT}\nÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ° AylÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k: ~$${l.monthly || 0} / $${MONTHLY_BUDGET_USD}`);
+      await send(chatId, `ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ *Limit Durumu*\nÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¤ GÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼nlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼k: ${l.daily || 0}/${DAILY_LIMIT}\nÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ° AylÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k: ~$${l.monthly || 0} / $${MONTHLY_BUDGET_USD}`);
       return res.status(200).json({ ok: true });
     }
 
-    // ---- Admin komutlarÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ± ----
+    // ---- Admin komutlarÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ± ----
     if (command === '/rapor') {
-      if (user.role !== 'admin') { await send(chatId, 'ÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ« Bu komut sadece yÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¶neticiler iÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ§indir.'); return res.status(200).json({ ok: true }); }
+      if (user.role !== 'admin') { await send(chatId, '🚫 Sadece yönetici.'); return res.status(200).json({ ok: true }); }
       await typing(chatId);
       const report = await generateMorningReport();
       await send(chatId, report);
-      await logQuery(msg.from.id, 'rapor', text, 'GÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼nlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼k rapor');
+      await logQuery(msg.from.id, 'rapor', text, 'GÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼nlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¼k rapor');
       return res.status(200).json({ ok: true });
     }
 
-    // ---- YENÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°: KarlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±lÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k raporu komutu ----
+    // ---- YENÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°: KarlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±lÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k raporu komutu ----
     if (command === '/karlilik') {
-      if (user.role !== 'admin') { await send(chatId, 'ÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ« Bu komut sadece yÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¶neticiler iÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ§indir.'); return res.status(200).json({ ok: true }); }
+      if (user.role !== 'admin') { await send(chatId, 'ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ« Bu komut sadece yÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¶neticiler iÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ§indir.'); return res.status(200).json({ ok: true }); }
       const p1 = text.split(' ')[1] || null;
       const p2 = text.split(' ')[2] || null;
-      if (!p1) { await sendHtml(chatId, '<b>Tarih aral\u0131\u011f\u0131 girin:</b>\n\u2022 /karlilik 2026-01-01 2026-03-31'); return res.status(200).json({ ok: true }); } // /karlilik 04 ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ '04'
+      if (!p1) { await sendHtml(chatId, '<b>Tarih aral\u0131\u011f\u0131 girin:</b>\n\u2022 /karlilik 2026-01-01 2026-03-31'); return res.status(200).json({ ok: true }); } // /karlilik 04 ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ '04'
       try {
         await karlilikRaporuCek(chatId, p1, p2);
       } catch (err) {
-        console.error('KarlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±lÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k raporu hata:', err);
-        await sendHtml(chatId, `ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ KarlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±lÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k raporu hatasÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±: ${err.message}`);
+        console.error('KarlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±lÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k raporu hata:', err);
+        await sendHtml(chatId, `ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ KarlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±lÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k raporu hatasÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±: ${err.message}`);
       }
-      await logQuery(msg.from.id, 'karlilik', text, 'KarlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±lÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k raporu');
+      await logQuery(msg.from.id, 'karlilik', text, 'KarlÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±lÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±k raporu');
       return res.status(200).json({ ok: true });
     }
 
     if (command === '/ogren') {
-      if (!cleanText) { await send(chatId, 'ÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ KullanÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±m: /ogren [bilgi]'); return res.status(200).json({ ok: true }); }
+      if (!cleanText) { await send(chatId, 'ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ°ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ KullanÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±m: /ogren [bilgi]'); return res.status(200).json({ ok: true }); }
       await typing(chatId);
-      const result = await runAgent(`KullanÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±cÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ± ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂu bilgiyi eklemek istiyor: "${cleanText}". Uygun kategori belirle ve bilgi_ekle aracÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±nÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ± kullan.`);
+      const result = await runAgent(`KullanÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±cÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ± ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂu bilgiyi eklemek istiyor: "${cleanText}". Uygun kategori belirle ve bilgi_ekle aracÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ±nÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ± kullan.`);
       await send(chatId, result);
       await logQuery(msg.from.id, 'ogren', text, result);
       return res.status(200).json({ ok: true });
