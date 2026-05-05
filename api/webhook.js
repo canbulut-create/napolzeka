@@ -194,13 +194,10 @@ async function execVergi({ islem, ay, yil }) {
 }
 
 // ==================== KARLILIK ====================
+// DIA bilgileri (di\u011Fer komutlar i\u00E7in - generateMorningReport kullan\u0131yor)
 const DIA_URL_K = `https://${process.env.DIA_SERVER}.ws.dia.com.tr/api/v3`;
 const DIA_FIRMA_K = parseInt(process.env.DIA_FIRMA || '2');
 const DIA_DONEM_K = parseInt(process.env.DIA_DONEM || '3');
-const DIA_DEPO_K = parseInt(process.env.DIA_DEPO || '2987');
-const SATIS_TURLERI = ['Toptan Sat\u0131\u015F', 'Perakende Sat\u0131\u015F', 'Verilen Hizmet'];
-const IADE_TURLERI = ['Toptan Sat\u0131\u015F \u0130ade', 'Perakende Sat\u0131\u015F \u0130ade', 'Al\u0131nan Fiyat Fark\u0131', 'Verilen Fiyat Fark\u0131'];
-const GIDER_TURLERI = ['Al\u0131nan Hizmet', 'Mal Al\u0131m'];
 
 async function diaLoginK() {
   const res = await fetch(`${DIA_URL_K}/sis/json`, {
@@ -222,56 +219,206 @@ async function diaCallK(endpoint, body) {
   return d;
 }
 
-function fmtP(n) { return Number(n||0).toLocaleString('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }); }
+// Para format\u0131: 34.257.926,83 \u20BA
+function fmtTL(n) { return Number(n||0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' \u20BA'; }
+// Y\u00FCzde format\u0131: %35,4
+function fmtPct(n, d = 1) { return '%' + Number(n||0).toLocaleString('tr-TR', { minimumFractionDigits: d, maximumFractionDigits: d }); }
+// Tarih ge\u00E7erlilik kontrol\u00FC YYYY-MM-DD
+function isValidDate(s) { return /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(new Date(s).getTime()); }
 
-async function karlilikRaporuCek(chatId, basTarih, bitTarih) {
-  await sendHtml(chatId, '\u23F3 Karl\u0131l\u0131k raporu haz\u0131rlan\u0131yor...');
-  const simdi = new Date();
-  const basTar = basTarih || `${simdi.getFullYear()}-${String(simdi.getMonth()+1).padStart(2,'0')}-01`;
-  const bitTar = bitTarih || new Date(simdi.getFullYear(), simdi.getMonth()+1, 0).toISOString().split('T')[0];
-  const sessionId = await diaLoginK();
-  const res = await diaCallK('rpr/json', { rpr_raporsonuc_getir: {
-    session_id: sessionId, firma_kodu: DIA_FIRMA_K, donem_kodu: DIA_DONEM_K,
-    filters: '', sorts: '',
-    format_type: 'json',
-    params: { tasarim_key: 808, fistarihi1: basTar, fistarihi2: bitTar,
-      maliyethesaplamaYontemi: 'Sadece Maliyet', _key_sis_depo: DIA_DEPO_K,
-      perakende_satis: true, toptan_satis: true, alinan_fiyat_farki: true, verilen_fiyat_farki: true,
-      verilen_hizmet: true, perakende_iade: true, toptan_iade: true, mal_alim: true, alinan_hizmet: true },
-    limit: 5000, offset: 0
-  }});
-  let rows = [];
-  if (res.result) { const dec = Buffer.from(res.result, 'base64').toString('utf-8'); const data = JSON.parse(dec); rows = data.__rows || data.rows || []; }
-  let ciro = 0, maliyet = 0, kar = 0;
-  const uyari = [], cariMap = {};
+// Yetki kontrol\u00FC: admin/manager veya permissions \u00FCzerinden 'karlilik'
+function karlilikYetkili(user) {
+  if (!user) return false;
+  if (user.role === 'admin' || user.role === 'manager') return true;
+  const p = user.permissions;
+  if (Array.isArray(p) && p.includes('karlilik')) return true;
+  if (typeof p === 'string') { try { return JSON.parse(p).includes('karlilik'); } catch(e) {} }
+  return false;
+}
+
+// Preset tarih aral\u0131\u011F\u0131 hesapla
+function karlilikTarihAraligi(preset) {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  if (preset === 'bu_ay') return [fmt(new Date(y, m, 1)), fmt(new Date(y, m+1, 0))];
+  if (preset === 'gecen_ay') return [fmt(new Date(y, m-1, 1)), fmt(new Date(y, m, 0))];
+  if (preset === 'son_3_ay') return [fmt(new Date(y, m-2, 1)), fmt(new Date(y, m+1, 0))];
+  if (preset === 'yba') return [fmt(new Date(y, 0, 1)), fmt(new Date(y, m+1, 0))];
+  return null;
+}
+
+// Karl\u0131l\u0131k butonlar\u0131
+function karlilikPresetKeyboard() {
+  return { inline_keyboard: [
+    [ { text: '\uD83D\uDCC5 Bu ay', callback_data: 'kl_p_bu_ay' }, { text: '\uD83D\uDCC5 Ge\u00E7en ay', callback_data: 'kl_p_gecen_ay' } ],
+    [ { text: '\uD83D\uDCC5 Son 3 ay', callback_data: 'kl_p_son_3_ay' }, { text: '\uD83D\uDCC5 Y\u0131l ba\u015F\u0131ndan bug\u00FCne', callback_data: 'kl_p_yba' } ],
+    [ { text: '\uD83D\uDCC5 \u00D6zel tarih', callback_data: 'kl_p_ozel' } ]
+  ]};
+}
+
+function karlilikDetayKeyboard(basTarih, bitTarih) {
+  return { inline_keyboard: [
+    [ { text: '\uD83C\uDFC6 En k\u00E2rl\u0131 5 m\u00FC\u015Fteri', callback_data: `kl_t_${basTarih}_${bitTarih}` } ],
+    [ { text: '\uD83D\uDCB8 En b\u00FCy\u00FCk 5 gider', callback_data: `kl_g_${basTarih}_${bitTarih}` } ]
+  ]};
+}
+
+async function sendKeyboard(chatId, text, keyboard) {
+  await fetch(`${TG}/sendMessage`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML', reply_markup: keyboard })
+  }).catch(() => {});
+}
+
+async function answerCallback(callbackId, text) {
+  await fetch(`${TG}/answerCallbackQuery`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ callback_query_id: callbackId, text: text || '' })
+  }).catch(() => {});
+}
+
+// ==================== KARLILIK SUPABASE QUERIES ====================
+async function karlilikOzetCek(basTarih, bitTarih) {
+  // Tek seferde kay\u0131tlar\u0131 al, JS'te hesapla (PostgREST aggregate kar\u0131\u015F\u0131k oluyor)
+  const { data, error } = await supabase
+    .from('dia_karlilik_raporu')
+    .select('fis_turu, toplam_tutar, kar, maliyetsiz_mi, fatura_no, cari_unvan')
+    .gte('tarih', basTarih).lte('tarih', bitTarih)
+    .limit(10000);
+  if (error) throw new Error(`Supabase: ${error.message}`);
+  const rows = data || [];
+  let ciro = 0, brutKar = 0, toplamGider = 0, netKar = 0;
+  const maliyetsiz = [];
   for (const r of rows) {
-    const tur = r.turuaciklama || '';
-    const tutar = parseFloat(r.toplamFaturaTutari||0);
-    const mal = parseFloat(r.toplamFaturaMaliyeti||0);
-    const cari = (r.carifirma||'').substring(0,30);
-    const fisNo = r.belgeno2 || r.fisno || '';
-    if (GIDER_TURLERI.includes(tur)) { maliyet += tutar; continue; }
-    if (IADE_TURLERI.includes(tur)) { ciro -= tutar; maliyet -= mal; kar -= (tutar-mal); continue; }
-    if (SATIS_TURLERI.includes(tur)) {
-      if (mal === 0) uyari.push(`${fisNo} - ${cari}`);
-      ciro += tutar; maliyet += mal; kar += (tutar-mal);
-      if (cari) { if (!cariMap[cari]) cariMap[cari] = {c:0,k:0}; cariMap[cari].c+=tutar; cariMap[cari].k+=(tutar-mal); }
-    }
+    const tutar = Number(r.toplam_tutar || 0);
+    const kar = Number(r.kar || 0);
+    netKar += kar;
+    if (r.fis_turu === 'TS') { ciro += tutar; brutKar += kar; }
+    else if (r.fis_turu === 'AH') { toplamGider += Math.abs(tutar); }
+    if (r.maliyetsiz_mi) maliyetsiz.push({ fatura_no: r.fatura_no, cari_unvan: r.cari_unvan });
   }
-  const top5 = Object.entries(cariMap).sort((a,b)=>b[1].k-a[1].k).slice(0,5);
-  const marj = ciro > 0 ? ((kar/ciro)*100).toFixed(1) : '0.0';
-  let msg = `\uD83D\uDCCA <b>Karl\u0131l\u0131k Raporu</b>\n<i>${basTar} \u2192 ${bitTar}</i>\n\n`;
-  msg += `\uD83D\uDCB0 <b>Ciro:</b> ${fmtP(ciro)} \u20BA\n\uD83D\uDCE6 <b>Maliyet:</b> ${fmtP(maliyet)} \u20BA\n\u2705 <b>Kar:</b> ${fmtP(kar)} \u20BA (%${marj})\n`;
-  if (top5.length > 0) {
-    msg += `\n\uD83C\uDFC6 <b>En Karl\u0131 5 Cari:</b>\n`;
-    for (const [ad,v] of top5) { const cm = v.c>0?((v.k/v.c)*100).toFixed(0):0; msg += `  \u2022 ${ad}: ${fmtP(v.k)} \u20BA (%${cm})\n`; }
+  return { ciro, brutKar, toplamGider, netKar, maliyetsiz, kayitSayisi: rows.length };
+}
+
+async function karlilikTopMusteri(basTarih, bitTarih) {
+  const { data, error } = await supabase
+    .from('dia_karlilik_raporu')
+    .select('cari_unvan, toplam_tutar, kar, kar_orani')
+    .eq('fis_turu', 'TS')
+    .gte('tarih', basTarih).lte('tarih', bitTarih)
+    .limit(10000);
+  if (error) throw new Error(`Supabase: ${error.message}`);
+  const map = {};
+  for (const r of data || []) {
+    const ad = r.cari_unvan || '(bilinmeyen)';
+    if (!map[ad]) map[ad] = { ciro: 0, kar: 0, marjlar: [] };
+    map[ad].ciro += Number(r.toplam_tutar || 0);
+    map[ad].kar += Number(r.kar || 0);
+    if (r.kar_orani != null) map[ad].marjlar.push(Number(r.kar_orani));
   }
-  if (uyari.length > 0) {
-    msg += `\n\u26A0\uFE0F <b>Maliyetsiz Sat\u0131\u015F (${uyari.length} fatura):</b>\n`;
-    for (const u of uyari.slice(0,5)) msg += `  \u2022 ${u}\n`;
-    if (uyari.length > 5) msg += `  ...ve ${uyari.length-5} fatura daha\n`;
+  return Object.entries(map).map(([ad, v]) => ({
+    cari_unvan: ad, ciro: v.ciro, toplam_kar: v.kar,
+    ort_marj: v.marjlar.length > 0 ? v.marjlar.reduce((s,x)=>s+x,0)/v.marjlar.length : 0
+  })).sort((a,b)=>b.toplam_kar-a.toplam_kar).slice(0,5);
+}
+
+async function karlilikTopGider(basTarih, bitTarih) {
+  const { data, error } = await supabase
+    .from('dia_karlilik_raporu')
+    .select('cari_unvan, toplam_tutar')
+    .eq('fis_turu', 'AH')
+    .gte('tarih', basTarih).lte('tarih', bitTarih)
+    .limit(10000);
+  if (error) throw new Error(`Supabase: ${error.message}`);
+  const map = {};
+  for (const r of data || []) {
+    const ad = r.cari_unvan || '(bilinmeyen)';
+    if (!map[ad]) map[ad] = { gider: 0, sayi: 0 };
+    map[ad].gider += Math.abs(Number(r.toplam_tutar || 0));
+    map[ad].sayi += 1;
   }
+  return Object.entries(map).map(([ad, v]) => ({
+    cari_unvan: ad, toplam_gider: v.gider, fatura_sayisi: v.sayi
+  })).sort((a,b)=>b.toplam_gider-a.toplam_gider).slice(0,5);
+}
+
+function karlilikOzetMesaji(basTarih, bitTarih, ozet) {
+  const { ciro, brutKar, toplamGider, netKar, maliyetsiz } = ozet;
+  const marj = ciro > 0 ? (brutKar / ciro) * 100 : 0;
+  let msg = `\uD83D\uDCCA <b>Karl\u0131l\u0131k \u00D6zeti</b>\n`;
+  msg += `\uD83D\uDCC5 ${basTarih} \u2013 ${bitTarih}\n\n`;
+  msg += `\uD83D\uDCB0 Ciro: ${fmtTL(ciro)}\n`;
+  msg += `\u2705 Br\u00FCt K\u00E2r: ${fmtTL(brutKar)} (${fmtPct(marj)})\n`;
+  msg += `\uD83D\uDCB8 Toplam Gider: ${fmtTL(toplamGider)}\n`;
+  msg += `\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n`;
+  msg += `\uD83C\uDFAF <b>Net K\u00E2r: ${fmtTL(netKar)}</b>\n`;
+  if (maliyetsiz.length > 0) {
+    msg += `\n\u26A0\uFE0F ${maliyetsiz.length} adet maliyetsiz sat\u0131\u015F var (DIA'da maliyet hen\u00FCz i\u015Flenmemi\u015F):\n`;
+    const goster = maliyetsiz.slice(0, 5).map(m => m.fatura_no || '(no yok)').join(', ');
+    msg += goster;
+    if (maliyetsiz.length > 5) msg += ` ve ${maliyetsiz.length - 5} adet daha`;
+  }
+  return msg;
+}
+
+async function karlilikGonder(chatId, basTarih, bitTarih, telegramId) {
+  if (!isValidDate(basTarih) || !isValidDate(bitTarih)) {
+    await sendHtml(chatId, '\u274C Tarih format\u0131 hatal\u0131. Kullan\u0131m: <code>/karlilik 2026-01-01 2026-04-30</code>');
+    return null;
+  }
+  if (basTarih > bitTarih) {
+    await sendHtml(chatId, '\u274C Ba\u015Flang\u0131\u00E7 tarihi biti\u015F tarihinden sonra olamaz.');
+    return null;
+  }
+  await typing(chatId);
+  let ozet;
+  try {
+    ozet = await karlilikOzetCek(basTarih, bitTarih);
+  } catch (e) {
+    await sendHtml(chatId, '\u274C Veritaban\u0131na \u015Fu an eri\u015Filemiyor, l\u00FCtfen tekrar deneyin.');
+    console.error('Karlilik ozet hata:', e.message);
+    return null;
+  }
+  if (ozet.kayitSayisi === 0) {
+    await sendHtml(chatId, `\u2139\uFE0F Bu tarih aral\u0131\u011F\u0131nda kay\u0131t bulunamad\u0131 (${basTarih} \u2013 ${bitTarih}).`);
+    await logQuery(telegramId, 'karlilik', `${basTarih} ${bitTarih}`, 'kayit yok');
+    return null;
+  }
+  const msg = karlilikOzetMesaji(basTarih, bitTarih, ozet);
+  await sendKeyboard(chatId, msg, karlilikDetayKeyboard(basTarih, bitTarih));
+  await logQuery(telegramId, 'karlilik', `${basTarih} ${bitTarih}`, msg);
+  return ozet;
+}
+
+async function karlilikTopMusteriGonder(chatId, basTarih, bitTarih, telegramId) {
+  await typing(chatId);
+  let liste;
+  try { liste = await karlilikTopMusteri(basTarih, bitTarih); }
+  catch (e) { await sendHtml(chatId, '\u274C Veritaban\u0131na \u015Fu an eri\u015Filemiyor, l\u00FCtfen tekrar deneyin.'); console.error(e.message); return; }
+  if (liste.length === 0) { await sendHtml(chatId, '\u2139\uFE0F Bu aral\u0131kta sat\u0131\u015F kayd\u0131 yok.'); return; }
+  let msg = `\uD83C\uDFC6 <b>En K\u00E2rl\u0131 5 M\u00FC\u015Fteri</b>\n\uD83D\uDCC5 ${basTarih} \u2013 ${bitTarih}\n\n`;
+  liste.forEach((m, i) => {
+    msg += `${i+1}. <b>${m.cari_unvan}</b>\n`;
+    msg += `   Ciro: ${fmtTL(m.ciro)} | K\u00E2r: ${fmtTL(m.toplam_kar)} (${fmtPct(m.ort_marj)})\n`;
+  });
   await sendHtml(chatId, msg);
+  await logQuery(telegramId, 'karlilik_top_musteri', `${basTarih} ${bitTarih}`, msg);
+}
+
+async function karlilikTopGiderGonder(chatId, basTarih, bitTarih, telegramId) {
+  await typing(chatId);
+  let liste;
+  try { liste = await karlilikTopGider(basTarih, bitTarih); }
+  catch (e) { await sendHtml(chatId, '\u274C Veritaban\u0131na \u015Fu an eri\u015Filemiyor, l\u00FCtfen tekrar deneyin.'); console.error(e.message); return; }
+  if (liste.length === 0) { await sendHtml(chatId, '\u2139\uFE0F Bu aral\u0131kta gider kayd\u0131 yok.'); return; }
+  let msg = `\uD83D\uDCB8 <b>En B\u00FCy\u00FCk 5 Gider</b>\n\uD83D\uDCC5 ${basTarih} \u2013 ${bitTarih}\n\n`;
+  liste.forEach((g, i) => {
+    msg += `${i+1}. <b>${g.cari_unvan}</b>\n`;
+    msg += `   Tutar: ${fmtTL(g.toplam_gider)} | ${g.fatura_sayisi} fatura\n`;
+  });
+  await sendHtml(chatId, msg);
+  await logQuery(telegramId, 'karlilik_top_gider', `${basTarih} ${bitTarih}`, msg);
 }
 
 // ==================== MORNING REPORT ====================
@@ -349,6 +496,52 @@ async function runAgent(userMessage) {
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(200).json({ ok: true, msg: 'OpenClaw running' });
   try {
+    // ----- callback_query (inline keyboard) -----
+    if (req.body.callback_query) {
+      const cb = req.body.callback_query;
+      const cbChatId = cb.message && cb.message.chat ? cb.message.chat.id : null;
+      const cbData = cb.data || '';
+      const cbUser = await getOrCreateUser(cb.from);
+      await answerCallback(cb.id, '');
+      if (!cbChatId || !cbUser || !cbUser.is_active) return res.status(200).json({ ok: true });
+
+      // /karlilik callbacks
+      if (cbData.startsWith('kl_')) {
+        if (!karlilikYetkili(cbUser)) {
+          await send(cbChatId, '🚫 Bu komut için yetkiniz yok.');
+          return res.status(200).json({ ok: true });
+        }
+        // Preset seçimi
+        if (cbData.startsWith('kl_p_')) {
+          const preset = cbData.substring(5);
+          if (preset === 'ozel') {
+            await sendHtml(cbChatId, '📅 <b>Özel tarih aralığı</b>\n\nLütfen şu formatta yazın:\n<code>/karlilik 2026-01-01 2026-04-30</code>');
+            return res.status(200).json({ ok: true });
+          }
+          const aralik = karlilikTarihAraligi(preset);
+          if (!aralik) { await send(cbChatId, '❌ Geçersiz seçim.'); return res.status(200).json({ ok: true }); }
+          await karlilikGonder(cbChatId, aralik[0], aralik[1], cb.from.id);
+          return res.status(200).json({ ok: true });
+        }
+        // Top müşteri / gider
+        if (cbData.startsWith('kl_t_') || cbData.startsWith('kl_g_')) {
+          const parts = cbData.split('_');
+          // kl_t_YYYY-MM-DD_YYYY-MM-DD → ['kl', 't', 'YYYY-MM-DD', 'YYYY-MM-DD']
+          const tip = parts[1];
+          const bas = parts[2];
+          const bit = parts[3];
+          if (!isValidDate(bas) || !isValidDate(bit)) {
+            await send(cbChatId, '❌ Tarih bilgisi okunamadı.');
+            return res.status(200).json({ ok: true });
+          }
+          if (tip === 't') await karlilikTopMusteriGonder(cbChatId, bas, bit, cb.from.id);
+          else await karlilikTopGiderGonder(cbChatId, bas, bit, cb.from.id);
+          return res.status(200).json({ ok: true });
+        }
+      }
+      return res.status(200).json({ ok: true });
+    }
+
     const msg = req.body.message;
     if (!msg || !msg.text) return res.status(200).json({ ok: true });
     const chatId = msg.chat.id;
@@ -389,15 +582,31 @@ module.exports = async function handler(req, res) {
 
     // /karlilik
     if (command === '/karlilik') {
-      if (user.role !== 'admin') { await send(chatId, '\uD83D\uDEAB Sadece y\u00F6netici.'); return res.status(200).json({ ok: true }); }
-      const p1 = text.split(' ')[1] || null;
-      const p2 = text.split(' ')[2] || null;
-      if (!p1) {
-        await sendHtml(chatId, '\uD83D\uDCCA <b>Karl\u0131l\u0131k Raporu</b>\n\nHangi tarih aral\u0131\u011F\u0131?\n\n\u00D6rnekler:\n\u2022 <code>/karlilik 2026-01-01 2026-03-31</code>\n\u2022 <code>/karlilik 2026-03-01 2026-03-31</code>');
+      if (!karlilikYetkili(user)) {
+        await send(chatId, '\uD83D\uDEAB Bu komut i\u00E7in yetkiniz yok.');
         return res.status(200).json({ ok: true });
       }
-      try { await karlilikRaporuCek(chatId, p1, p2); } catch(err) { await sendHtml(chatId, `\u274C ${err.message}`); }
-      await logQuery(msg.from.id, 'karlilik', text, 'karl\u0131l\u0131k');
+      const parts = text.split(/\s+/);
+      const p1 = parts[1] || null;
+      const p2 = parts[2] || null;
+      if (!p1) {
+        await sendKeyboard(chatId,
+          '\uD83D\uDCCA <b>Karl\u0131l\u0131k Raporu</b>\n\nHangi tarih aral\u0131\u011F\u0131 i\u00E7in hesaplayay\u0131m?',
+          karlilikPresetKeyboard()
+        );
+        return res.status(200).json({ ok: true });
+      }
+      if (!isValidDate(p1) || (p2 && !isValidDate(p2))) {
+        await sendHtml(chatId, '\u274C Tarih format\u0131 hatal\u0131.\nKullan\u0131m: <code>/karlilik 2026-01-01 2026-04-30</code>');
+        return res.status(200).json({ ok: true });
+      }
+      // p2 yoksa o ay\u0131n sonu
+      let bitTarih = p2;
+      if (!bitTarih) {
+        const d = new Date(p1);
+        bitTarih = new Date(d.getFullYear(), d.getMonth()+1, 0).toISOString().split('T')[0];
+      }
+      await karlilikGonder(chatId, p1, bitTarih, msg.from.id);
       return res.status(200).json({ ok: true });
     }
 
