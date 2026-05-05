@@ -194,6 +194,9 @@ async function execVergi({ islem, ay, yil }) {
 }
 
 // ==================== KARLILIK ====================
+// DIA'da maliyet hen\u00FCz i\u015Flenmemi\u015F sat\u0131\u015Flar i\u00E7in varsay\u0131lan br\u00FCt k\u00E2r oran\u0131
+const MALIYETSIZ_TAHMINI_BRUT_MARJ = 0.15; // %15
+
 // DIA bilgileri (di\u011Fer komutlar i\u00E7in - generateMorningReport kullan\u0131yor)
 const DIA_URL_K = `https://${process.env.DIA_SERVER}.ws.dia.com.tr/api/v3`;
 const DIA_FIRMA_K = parseInt(process.env.DIA_FIRMA || '2');
@@ -293,10 +296,18 @@ async function karlilikOzetCek(basTarih, bitTarih) {
   for (const r of rows) {
     const tutar = Number(r.toplam_tutar || 0);
     const kar = Number(r.kar || 0);
-    netKar += kar;
-    if (r.fis_turu === 'TS') { ciro += tutar; brutKar += kar; }
-    else if (r.fis_turu === 'AH') { toplamGider += Math.abs(tutar); }
-    if (r.maliyetsiz_mi) maliyetsiz.push({ fatura_no: r.fatura_no, cari_unvan: r.cari_unvan });
+    if (r.fis_turu === 'TS') {
+      ciro += tutar;
+      // Maliyetsiz satışlar için DIA'da kar = tutar (kar_orani=100) yazılı,
+      // bu yanlış. Brüt kârı tutar*0.15 olarak varsayıyoruz.
+      const satisKar = r.maliyetsiz_mi ? (tutar * MALIYETSIZ_TAHMINI_BRUT_MARJ) : kar;
+      brutKar += satisKar;
+      netKar  += satisKar;
+      if (r.maliyetsiz_mi) maliyetsiz.push({ fatura_no: r.fatura_no, cari_unvan: r.cari_unvan });
+    } else if (r.fis_turu === 'AH') {
+      toplamGider += Math.abs(tutar);
+      netKar += kar; // gider satırı, kar değeri negatif
+    }
   }
   return { ciro, brutKar, toplamGider, netKar, maliyetsiz, kayitSayisi: rows.length };
 }
@@ -304,23 +315,30 @@ async function karlilikOzetCek(basTarih, bitTarih) {
 async function karlilikTopMusteri(basTarih, bitTarih) {
   const { data, error } = await supabase
     .from('dia_karlilik_raporu')
-    .select('cari_unvan, toplam_tutar, kar, kar_orani')
+    .select('cari_unvan, toplam_tutar, kar, maliyetsiz_mi')
     .eq('fis_turu', 'TS')
     .gte('tarih', basTarih).lte('tarih', bitTarih)
     .limit(10000);
   if (error) throw new Error(`Supabase: ${error.message}`);
   const map = {};
+  let hasMaliyetsiz = false;
   for (const r of data || []) {
     const ad = r.cari_unvan || '(bilinmeyen)';
-    if (!map[ad]) map[ad] = { ciro: 0, kar: 0, marjlar: [] };
-    map[ad].ciro += Number(r.toplam_tutar || 0);
-    map[ad].kar += Number(r.kar || 0);
-    if (r.kar_orani != null) map[ad].marjlar.push(Number(r.kar_orani));
+    if (!map[ad]) map[ad] = { ciro: 0, kar: 0 };
+    const tutar = Number(r.toplam_tutar || 0);
+    // SQL: CASE WHEN maliyetsiz_mi = false THEN kar ELSE toplam_tutar * 0.15 END
+    const satisKar = r.maliyetsiz_mi ? (tutar * MALIYETSIZ_TAHMINI_BRUT_MARJ) : Number(r.kar || 0);
+    map[ad].ciro += tutar;
+    map[ad].kar  += satisKar;
+    if (r.maliyetsiz_mi) hasMaliyetsiz = true;
   }
-  return Object.entries(map).map(([ad, v]) => ({
-    cari_unvan: ad, ciro: v.ciro, toplam_kar: v.kar,
-    ort_marj: v.marjlar.length > 0 ? v.marjlar.reduce((s,x)=>s+x,0)/v.marjlar.length : 0
+  const liste = Object.entries(map).map(([ad, v]) => ({
+    cari_unvan: ad,
+    ciro: v.ciro,
+    toplam_kar: v.kar,
+    ort_marj: v.ciro > 0 ? (v.kar / v.ciro) * 100 : 0
   })).sort((a,b)=>b.toplam_kar-a.toplam_kar).slice(0,5);
+  return { liste, hasMaliyetsiz };
 }
 
 async function karlilikTopGider(basTarih, bitTarih) {
@@ -393,15 +411,19 @@ async function karlilikGonder(chatId, basTarih, bitTarih, telegramId) {
 
 async function karlilikTopMusteriGonder(chatId, basTarih, bitTarih, telegramId) {
   await typing(chatId);
-  let liste;
-  try { liste = await karlilikTopMusteri(basTarih, bitTarih); }
+  let result;
+  try { result = await karlilikTopMusteri(basTarih, bitTarih); }
   catch (e) { await sendHtml(chatId, '\u274C Veritaban\u0131na \u015Fu an eri\u015Filemiyor, l\u00FCtfen tekrar deneyin.'); console.error(e.message); return; }
+  const { liste, hasMaliyetsiz } = result;
   if (liste.length === 0) { await sendHtml(chatId, '\u2139\uFE0F Bu aral\u0131kta sat\u0131\u015F kayd\u0131 yok.'); return; }
   let msg = `\uD83C\uDFC6 <b>En K\u00E2rl\u0131 5 M\u00FC\u015Fteri</b>\n\uD83D\uDCC5 ${basTarih} \u2013 ${bitTarih}\n\n`;
   liste.forEach((m, i) => {
     msg += `${i+1}. <b>${m.cari_unvan}</b>\n`;
     msg += `   Ciro: ${fmtTL(m.ciro)} | K\u00E2r: ${fmtTL(m.toplam_kar)} (${fmtPct(m.ort_marj)})\n`;
   });
+  if (hasMaliyetsiz) {
+    msg += `\n<i>Not: Maliyetsiz faturalar i\u00E7in %15 br\u00FCt k\u00E2r varsay\u0131m\u0131yla hesapland\u0131.</i>`;
+  }
   await sendHtml(chatId, msg);
   await logQuery(telegramId, 'karlilik_top_musteri', `${basTarih} ${bitTarih}`, msg);
 }
