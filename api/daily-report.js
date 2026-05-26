@@ -18,7 +18,10 @@ const TG_TOKEN     = process.env.TELEGRAM_BOT_TOKEN;
 const TG_CHAT      = process.env.TELEGRAM_CHAT_ID;
 const ADMIN_IDS    = (process.env.ADMIN_TELEGRAM_IDS || '')
   .split(',').map((s) => s.trim()).filter(Boolean);
-const CRON_SECRET  = process.env.NAPOL_CRON_SECRET;
+// İki env adını da kabul ediyoruz: NAPOL_CRON_SECRET (manuel) ve
+// CRON_SECRET (Vercel cron'un otomatik Bearer header'ı için).
+// Aynı değeri iki ayrı env'e koymak en güvenlisi (DEPLOY-REHBERI-FAZ2 not 1).
+const CRON_SECRET  = process.env.NAPOL_CRON_SECRET || process.env.CRON_SECRET;
 
 // ----------------------------------------------------------------------------
 // Format yardımcıları (Türkçe konvansiyon: binlik nokta, ondalık virgül)
@@ -134,10 +137,13 @@ async function tgSendAll(text) {
 // Veri çekme
 // ----------------------------------------------------------------------------
 async function getSatislar(tarih) {
-  // vw_gunluk_satis_karlilik: fatura_tipi='satis' AND gider_kalemi_mi=false
+  // Faz 2: vw_gunluk_satis_karlilik artık Kâr 1 + Kâr 2 + fark üretiyor.
   const path =
     `/vw_gunluk_satis_karlilik?tarih=eq.${tarih}` +
-    `&select=tarih,fatura_no,cari_unvan,kdv_haric_satis,defter_maliyet,defter_kar,defter_marj,maliyetsiz_mi,stok_kodu` +
+    `&select=tarih,fatura_no,cari_unvan,kdv_haric_satis,` +
+    `guncel_kar,guncel_marj,guncel_maliyet,` +
+    `defter_kar,defter_marj,defter_maliyet,` +
+    `kur_farki_etkisi,maliyetsiz_mi,maliyetsiz_kalem_sayisi,toplam_kalem_sayisi` +
     `&order=fatura_no.asc`;
   return supGet(path);
 }
@@ -151,11 +157,10 @@ async function getAlislar(tarih) {
 }
 
 async function getMaliyetsizDetay(tarih) {
-  // Maliyetsiz satırların stok_kodu + fatura_no eşlemesini al (spec uyarı bölümü için).
+  // Faz 2: vw_gunluk_maliyetsiz_kalemler — kalem-bazlı uyarı kaynağı.
   const path =
-    `/dia_karlilik_raporu?tarih=eq.${tarih}` +
-    `&fatura_tipi=eq.satis&maliyetsiz_mi=is.true` +
-    `&select=fatura_no,stok_kodu,stok_adi`;
+    `/vw_gunluk_maliyetsiz_kalemler?tarih=eq.${tarih}` +
+    `&select=fatura_no,stok_kodu,stok_adi,sebep`;
   return supGet(path);
 }
 
@@ -185,51 +190,76 @@ function olusturRapor(tarih, satislar, alislar, maliyetsizDetay) {
     msg += `\n📈 FATURA BAZINDA KÂRLILIK\n\n`;
 
     for (const s of satislar) {
-      const defterKar  = Number(s.defter_kar || 0);
-      const defterMarj = Number(s.defter_marj || 0);
-      // Faz 1: Kâr 1 ve fark hesaplanamıyor → "—"
+      const guncelKar  = s.guncel_kar  != null ? Number(s.guncel_kar)  : null;
+      const guncelMarj = s.guncel_marj != null ? Number(s.guncel_marj) : null;
+      const defterKar  = s.defter_kar  != null ? Number(s.defter_kar)  : null;
+      const defterMarj = s.defter_marj != null ? Number(s.defter_marj) : null;
+      const fark       = s.kur_farki_etkisi != null ? Number(s.kur_farki_etkisi) : null;
       const cari = (s.cari_unvan || '').trim();
+
+      const guncelStr = guncelKar != null
+        ? `${fmtTL(guncelKar)} (${fmtYuzde(guncelMarj)})`
+        : '— (maliyet eksik)';
+      const defterStr = defterKar != null
+        ? `${fmtTL(defterKar)} (${fmtYuzde(defterMarj)})`
+        : '— (maliyet eksik)';
+      const farkStr = fark != null ? fmtTL(fark, { isaret: true }) : '—';
+
       msg += `${s.fatura_no} — ${cari}\n`;
-      msg += `  Kâr (güncel kur): — (kalem sync bekleniyor)\n`;
-      msg += `  Kâr (defter):    ${fmtTL(defterKar)} (${fmtYuzde(defterMarj)})\n`;
-      msg += `  Fark:            —\n\n`;
+      msg += `  Kâr (güncel kur): ${guncelStr}\n`;
+      msg += `  Kâr (defter):    ${defterStr}\n`;
+      msg += `  Fark:            ${farkStr}\n\n`;
     }
   }
 
   // ---- Maliyet eksik uyarısı ----
   if (maliyetsizDetay && maliyetsizDetay.length > 0) {
-    // Spec madde 4 → "MALİYET EKSİK" başlığı altında fatura bazında stok kodları
     const gruplar = {};
     for (const r of maliyetsizDetay) {
       const fno = r.fatura_no || '(faturasız)';
       if (!gruplar[fno]) gruplar[fno] = [];
-      if (r.stok_kodu) gruplar[fno].push(r.stok_kodu);
+      if (r.stok_kodu) gruplar[fno].push({ stok: r.stok_kodu, sebep: r.sebep });
     }
     msg += `⚠️ MALİYET EKSİK\n`;
-    for (const [fno, stoklar] of Object.entries(gruplar)) {
-      const adet = stoklar.length || 1;
-      msg += `${fno} — ${adet} satırda maliyet=0\n`;
-      if (stoklar.length > 0) {
-        msg += `  Stok kodları: ${stoklar.join(', ')}\n`;
+    for (const [fno, satirlar] of Object.entries(gruplar)) {
+      const adet = satirlar.length || 1;
+      msg += `${fno} — ${adet} satırda maliyet hesaplanamadı\n`;
+      const stokKodlari = satirlar.map((s) => s.stok).filter(Boolean);
+      if (stokKodlari.length > 0) {
+        msg += `  Stok kodları: ${stokKodlari.join(', ')}\n`;
+      }
+      // Hata sebeplerinin tekilleri (parse_fail, stok_kartı_yok, tcmb_kur_eksik vs)
+      const sebepler = [...new Set(satirlar.map((s) => s.sebep).filter(Boolean))];
+      if (sebepler.length > 0) {
+        msg += `  Sebep: ${sebepler.join(', ')}\n`;
       }
     }
     msg += `\n`;
   }
 
   // ---- TOPLAM ----
-  const toplamDefterKar = satislar.reduce((a, r) => a + Number(r.defter_kar || 0), 0);
-  const defterMarj = satisToplam > 0 ? (toplamDefterKar / satisToplam) * 100 : 0;
+  // null-güvenli toplam (eksik kalemli faturalarda guncel_kar/defter_kar null olabilir)
+  function sumNotNull(arr, key) {
+    return arr.reduce((a, r) => a + (r[key] != null ? Number(r[key]) : 0), 0);
+  }
+  const toplamGuncelKar = sumNotNull(satislar, 'guncel_kar');
+  const toplamDefterKar = sumNotNull(satislar, 'defter_kar');
+  const toplamKurFarki  = sumNotNull(satislar, 'kur_farki_etkisi');
+  // Marj payidası: sadece hesaplanabilir kalemlerin satışı (kdv_haric_satis × oran)
+  // Pratik: faturada herhangi bir kalem hesaplandıysa toplam satışı kullan
+  const guncelMarj = satisToplam > 0 ? (toplamGuncelKar / satisToplam) * 100 : null;
+  const defterMarj = satisToplam > 0 ? (toplamDefterKar / satisToplam) * 100 : null;
 
   msg += `────────────────\n`;
   msg += `TOPLAM\n`;
-  msg += `Kâr (güncel kur): — (kalem sync bekleniyor — Faz 2)\n`;
+  msg += `Kâr (güncel kur): ${fmtTL(toplamGuncelKar)} — Marj: ${fmtYuzde(guncelMarj)}\n`;
   msg += `Kâr (defter):    ${fmtTL(toplamDefterKar)} — Marj: ${fmtYuzde(defterMarj)}\n`;
-  msg += `Kur farkı etkisi: — (Faz 2)\n`;
+  msg += `Kur farkı etkisi: ${fmtTL(toplamKurFarki, { isaret: true })}\n`;
 
   // ---- Veri yok durumu ----
   if (satisFaturaSayisi === 0 && alisFaturaSayisi === 0) {
     msg += `\nℹ️ Bugün karlılık tablosunda hiç satış veya alış faturası yok.\n`;
-    msg += `   (dia_karlilik_raporu tablosu SCF2240A çağrısı ile güncellenmeli — Faz 2'de otomatize edilecek.)\n`;
+    msg += `   (dia_karlilik_raporu güncel değilse: /api/dia-sync?type=karlilik-sync&from=...&to=... çalıştır.)\n`;
   }
 
   return msg;

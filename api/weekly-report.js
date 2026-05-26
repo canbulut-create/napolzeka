@@ -15,7 +15,7 @@ const TG_TOKEN     = process.env.TELEGRAM_BOT_TOKEN;
 const TG_CHAT      = process.env.TELEGRAM_CHAT_ID;
 const ADMIN_IDS    = (process.env.ADMIN_TELEGRAM_IDS || '')
   .split(',').map((s) => s.trim()).filter(Boolean);
-const CRON_SECRET  = process.env.NAPOL_CRON_SECRET;
+const CRON_SECRET  = process.env.NAPOL_CRON_SECRET || process.env.CRON_SECRET;
 
 const AYLAR = [
   'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
@@ -176,10 +176,12 @@ function haftaAraligi() {
 // Veri sorguları
 // ----------------------------------------------------------------------------
 async function getSatisHaftalik(pzt, cum) {
-  // vw_haftalik_satis_karlilik
+  // Faz 2: vw_haftalik_satis_karlilik artık toplam_guncel_kar + kur_farki_etkisi'ni de içeriyor.
   return supGet(
     `/vw_haftalik_satis_karlilik?tarih=gte.${pzt}&tarih=lte.${cum}` +
-      `&select=tarih,fatura_sayisi,toplam_kdv_haric_satis,toplam_defter_kar,defter_marj,maliyetsiz_satir` +
+      `&select=tarih,fatura_sayisi,toplam_kdv_haric_satis,` +
+      `toplam_guncel_kar,toplam_defter_kar,toplam_kur_farki_etkisi,` +
+      `guncel_marj,defter_marj,maliyetsiz_fatura_sayisi` +
       `&order=tarih.asc`
   );
 }
@@ -200,10 +202,16 @@ function olusturRapor(pzt, cum, satisSatirlar, alisSatirlar) {
   msg += `📊 NAPOL HAFTALIK RAPOR\n`;
   msg += `${trBaslikAraligi(pzt, cum)}\n\n`;
 
-  const toplamCiro       = satisSatirlar.reduce((a, r) => a + Number(r.toplam_kdv_haric_satis || 0), 0);
-  const toplamAlis       = alisSatirlar .reduce((a, r) => a + Number(r.toplam_kdv_haric || 0), 0);
-  const toplamDefterKar  = satisSatirlar.reduce((a, r) => a + Number(r.toplam_defter_kar || 0), 0);
-  const defterMarj       = toplamCiro > 0 ? (toplamDefterKar / toplamCiro) * 100 : 0;
+  function sumNN(arr, key) {
+    return arr.reduce((a, r) => a + (r[key] != null ? Number(r[key]) : 0), 0);
+  }
+  const toplamCiro      = sumNN(satisSatirlar, 'toplam_kdv_haric_satis');
+  const toplamAlis      = sumNN(alisSatirlar,  'toplam_kdv_haric');
+  const toplamGuncelKar = sumNN(satisSatirlar, 'toplam_guncel_kar');
+  const toplamDefterKar = sumNN(satisSatirlar, 'toplam_defter_kar');
+  const toplamKurFarki  = sumNN(satisSatirlar, 'toplam_kur_farki_etkisi');
+  const guncelMarj      = toplamCiro > 0 ? (toplamGuncelKar / toplamCiro) * 100 : null;
+  const defterMarj      = toplamCiro > 0 ? (toplamDefterKar / toplamCiro) * 100 : null;
 
   msg += `💰 TOPLAM CİRO (Satış)\n`;
   msg += `${fmtTL(toplamCiro)} (KDV'siz)\n\n`;
@@ -211,9 +219,9 @@ function olusturRapor(pzt, cum, satisSatirlar, alisSatirlar) {
   msg += `${fmtTL(toplamAlis)} (KDV'siz)\n\n`;
 
   msg += `📈 TOPLAM KÂR\n`;
-  msg += `Kâr (güncel kur): — (kalem sync bekleniyor — Faz 2)\n`;
+  msg += `Kâr (güncel kur): ${fmtTL(toplamGuncelKar)} — Marj: ${fmtYuzde(guncelMarj)}\n`;
   msg += `Kâr (defter):    ${fmtTL(toplamDefterKar)} — Marj: ${fmtYuzde(defterMarj)}\n`;
-  msg += `Kur farkı etkisi: — (Faz 2)\n\n`;
+  msg += `Kur farkı etkisi: ${fmtTL(toplamKurFarki, { isaret: true })}\n\n`;
 
   msg += `────────────────\n`;
   msg += `GÜN GÜN DAĞILIM\n\n`;
@@ -226,10 +234,12 @@ function olusturRapor(pzt, cum, satisSatirlar, alisSatirlar) {
     const r = dataByDate[kursoIso];
     msg += `${trGunBasligi(kursoIso)}\n`;
     if (r) {
-      const satis = Number(r.toplam_kdv_haric_satis || 0);
-      const kar   = Number(r.toplam_defter_kar || 0);
+      const satis      = Number(r.toplam_kdv_haric_satis || 0);
+      const guncelKar  = r.toplam_guncel_kar != null ? Number(r.toplam_guncel_kar) : null;
+      const defterKar  = r.toplam_defter_kar != null ? Number(r.toplam_defter_kar) : null;
       msg += `  Satış: ${fmtTL(satis)}\n`;
-      msg += `  Kâr (güncel kur): — | Kâr (defter): ${fmtTL(kar)}\n`;
+      msg += `  Kâr (güncel kur): ${guncelKar != null ? fmtTL(guncelKar) : '—'}`;
+      msg += ` | Kâr (defter): ${defterKar != null ? fmtTL(defterKar) : '—'}\n`;
     } else {
       msg += `  Satış: 0 TL — kayıt yok\n`;
     }
@@ -240,7 +250,7 @@ function olusturRapor(pzt, cum, satisSatirlar, alisSatirlar) {
   // Hiç veri yoksa not
   if (satisSatirlar.length === 0 && alisSatirlar.length === 0) {
     msg += `ℹ️ Bu hafta karlılık tablosunda kayıt yok.\n`;
-    msg += `   (dia_karlilik_raporu tablosu SCF2240A çağrısı ile güncellenmeli — Faz 2'de otomatize edilecek.)\n`;
+    msg += `   (dia_karlilik_raporu güncel değilse: /api/dia-sync?type=karlilik-sync&from=...&to=... çalıştır.)\n`;
   }
 
   return msg;

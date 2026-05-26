@@ -7,7 +7,7 @@ const https = require('https');
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://lsxvskcdbppslpxaixky.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY;
-const CRON_SECRET  = process.env.NAPOL_CRON_SECRET;
+const CRON_SECRET  = process.env.NAPOL_CRON_SECRET || process.env.CRON_SECRET;
 
 // ----------------------------------------------------------------------------
 // TCMB XML fetch
