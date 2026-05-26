@@ -429,11 +429,33 @@ module.exports = async (req, res) => {
         const tarih = req.query?.tarih;
         if (!tarih) throw new Error('?tarih=YYYY-MM-DD gerekli');
         const chunk = await diaKalemChunk(sessionId, firma_kodu, donem_kodu, tarih, tarih, 0, 5);
+        // Field-mapping doğrulaması için kritik alanları AÇIK ŞEKİLDE döndürüyoruz.
+        // Eğer bir alan tanımlı değilse undefined; "—" göstermek yerine olduğu gibi bırakıyoruz.
         results.kalem_test = chunk.map(k => ({
-          _key: k._key, fatura_no: k.belgeno2 || k.faturano, tarih: k.tarih,
-          stok: k.stokkartkodu, miktar: k.miktar, birimfiyat: k.birimfiyat,
-          tutar: k.tutar, doviz: k.doviz, dovizkuru: k.dovizkuru,
-          all_keys: Object.keys(k),
+          _key:                  k._key,
+          fatura_no:             k.belgeno2 || k.faturano || k.belgeno,
+          tarih:                 k.tarih,
+          // Stok tanımı:
+          kartkodu:              k.kartkodu,
+          kartaciklama:          k.kartaciklama,
+          // Miktar:
+          miktar:                k.miktar,
+          anamiktar:             k.anamiktar,
+          // Birim fiyat varyantları:
+          birimfiyati:           k.birimfiyati,
+          yerelbirimfiyati:      k.yerelbirimfiyati,
+          sontutaryerel:         k.sontutaryerel,
+          // Satır tutar varyantları:
+          kdvharictutar:         k.kdvharictutar,
+          toplamkdvharictutar:   k.toplamkdvharictutar,
+          tutari:                k.tutari,
+          // Birim + döviz:
+          fatbirimi:             k.fatbirimi,
+          kalemdovizi:           k.kalemdovizi,
+          _key_sis_doviz:        k._key_sis_doviz,
+          dovizkuru:             k.dovizkuru,
+          // Tüm anahtarlar — ileride yeni alan keşfedersek:
+          all_keys:              Object.keys(k),
         }));
         break;
       }
