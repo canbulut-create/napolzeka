@@ -1,6 +1,9 @@
 {
   "crons": [
-    { "path": "/api/fatura-sync", "schedule": "0 16 * * 1-6" },
+    { "path": "/api/tcmb-sync",     "schedule": "0 6 * * 1-5" },
+    { "path": "/api/fatura-sync",   "schedule": "0 14 * * 1-6" },
+    { "path": "/api/daily-report",  "schedule": "0 15 * * 1-5" },
+    { "path": "/api/weekly-report", "schedule": "0 7 * * 6" },
     { "path": "/api/haftalik-sync", "schedule": "0 23 * * 0" }
   ]
 }

@@ -1,0 +1,43 @@
+📊 NAPOL GÜNLÜK RAPOR — 30 Nisan 2026
+
+💰 SATIŞ
+Fatura sayısı: 3
+Toplam tutar: 259.552 TL (KDV'siz)
+
+🛒 ALIŞ
+Fatura sayısı: 8
+Toplam tutar: 12.517 TL (KDV'siz)
+
+📈 FATURA BAZINDA KÂRLILIK
+
+NPE2026000000132 — BONİ KİMYA SANAYİ VETİCARET LİMİTED ŞİRKETİ
+  Kâr (güncel kur): — (kalem sync bekleniyor)
+  Kâr (defter):    7.339 TL (%6,5)
+  Fark:            —
+
+NPE2026000000133 — ÖZERDEN AMBALAJ SANAYİ ANONİM ŞİRKETİ
+  Kâr (güncel kur): — (kalem sync bekleniyor)
+  Kâr (defter):    9.891 TL (%34,2)
+  Fark:            —
+
+NPE2026000000134 — SEYİTLER KİMYA SANAYİ ANONİM ŞİRKETİ
+  Kâr (güncel kur): — (kalem sync bekleniyor)
+  Kâr (defter):    10.287 TL (%8,7)
+  Fark:            —
+
+────────────────
+TOPLAM
+Kâr (güncel kur): — (kalem sync bekleniyor — Faz 2)
+Kâr (defter):    27.517 TL — Marj: %10,6
+Kur farkı etkisi: — (Faz 2)
+
+
+---
+NOT: Bu çıktı, Supabase'deki gerçek 30 Nisan verisinden üretilen örnek bir DRY-RUN.
+Telegram'a gönderilmedi. Vercel deploy sonrası dry-run komutu:
+
+curl 'https://napolzeka.vercel.app/api/daily-report?tarih=2026-04-30&dry=1' \
+  -H 'Authorization: Bearer <CRON_SECRET>'
+
+O gün için 0 maliyetsiz satır olduğundan "⚠️ MALİYET EKSİK" bölümü görünmedi.
+Tarihçedeki 9 maliyetsiz satır farklı tarihlerde (örnek için 11 Şubat'ta 2 satır).

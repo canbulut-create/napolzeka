@@ -1,237 +1,288 @@
 // /api/daily-report.js
-// Cron: her gün 15:00 UTC (= TR 18:00)
-// DIA'dan bugünkü faturalar + çekler çekip Telegram'e gönderir
+// NapolZeka Rapor v2 — Günlük rapor (Pzt-Cum 18:00 TR)
+// Cron: Pzt-Cum 15:00 UTC = 18:00 TR
+// Kaynak: Supabase dia_karlilik_raporu (NPE prefix = satış, fatura_tipi generated column)
+// Çıktı : Telegram, spec NapolZeka Rapor v2 madde 4 formatında.
+//
+// Faz 1 sınırı:
+//   * Kâr 2 (defter)  : dia_karlilik_raporu.kar kullanılır — hesaplanır.
+//   * Kâr 1 (güncel kur): kalem sync (dia_fatura_kalemleri) ve stok ek_alan_1 lazım.
+//                         Faz 2'de eklenecek. Şu an "—" olarak gösterilir
+//                         ve toplamda not olarak belirtilir.
 
 const https = require('https');
 
-const DIA_URL = `https://${process.env.DIA_SERVER}.ws.dia.com.tr/api/v3`;
-const FIRMA   = parseInt(process.env.DIA_FIRMA   || '2');
-const DONEM   = parseInt(process.env.DIA_DONEM   || '3');
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
-const TELEG_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const TELEG_CHAT  = process.env.TELEGRAM_CHAT_ID;
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://lsxvskcdbppslpxaixky.supabase.co';
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY;
+const TG_TOKEN     = process.env.TELEGRAM_BOT_TOKEN;
+const TG_CHAT      = process.env.TELEGRAM_CHAT_ID;
+const ADMIN_IDS    = (process.env.ADMIN_TELEGRAM_IDS || '')
+  .split(',').map((s) => s.trim()).filter(Boolean);
+const CRON_SECRET  = process.env.CRON_SECRET;
 
-function diaPostBody(body) {
-  return new Promise((resolve, reject) => {
-    const data = JSON.stringify(body);
-    const url  = new URL(`${DIA_URL}/scf/json`);
-    const req  = https.request({ hostname: url.hostname, path: url.pathname,
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }
-    }, res => {
-      let raw = '';
-      res.on('data', c => raw += c);
-      res.on('end', () => {
-        try { resolve(JSON.parse(raw)); } catch(e) { reject(e); }
-      });
-    });
-    req.on('error', reject);
-    req.write(data);
-    req.end();
-  });
+// ----------------------------------------------------------------------------
+// Format yardımcıları (Türkçe konvansiyon: binlik nokta, ondalık virgül)
+// ----------------------------------------------------------------------------
+const AYLAR = [
+  'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+  'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık',
+];
+
+function trDate(iso) {
+  // iso: 'YYYY-MM-DD' → '26 Mayıs 2026'
+  const [y, m, d] = iso.split('-').map(Number);
+  return `${d} ${AYLAR[m - 1]} ${y}`;
 }
 
-function diaPostBcs(body) {
-  return new Promise((resolve, reject) => {
-    const data = JSON.stringify(body);
-    const url  = new URL(`${DIA_URL}/bcs/json`);
-    const req  = https.request({ hostname: url.hostname, path: url.pathname,
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }
-    }, res => {
-      let raw = '';
-      res.on('data', c => raw += c);
-      res.on('end', () => {
-        try { resolve(JSON.parse(raw)); } catch(e) { reject(e); }
-      });
-    });
-    req.on('error', reject);
-    req.write(data);
-    req.end();
-  });
+function trTarihBugunIstanbul() {
+  // TR saatine göre bugün (YYYY-MM-DD)
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Istanbul' });
 }
 
-function supFetch(path, method, body) {
+function fmtTL(n, opts = {}) {
+  // Spec madde 7: "Tüm rakamlar açık yazılır: 245.000 TL (kısaltma yok)"
+  const { kurus = false, isaret = false } = opts;
+  if (n == null || Number.isNaN(n)) return '—';
+  const abs = Math.abs(n);
+  const s = abs.toLocaleString('tr-TR', {
+    minimumFractionDigits: kurus ? 2 : 0,
+    maximumFractionDigits: kurus ? 2 : 0,
+  });
+  const sign = n < 0 ? '-' : (isaret && n > 0 ? '+' : '');
+  return `${sign}${s} TL`;
+}
+
+function fmtYuzde(n, ondalik = 1) {
+  // Spec: %18 (sembol önde, Türkçe konvansiyonu); marjda %14,6 gibi tek ondalık.
+  if (n == null || Number.isNaN(n)) return '—';
+  const s = n.toLocaleString('tr-TR', {
+    minimumFractionDigits: ondalik,
+    maximumFractionDigits: ondalik,
+  });
+  return `%${s}`;
+}
+
+// ----------------------------------------------------------------------------
+// Supabase REST fetch
+// ----------------------------------------------------------------------------
+function supGet(path) {
   return new Promise((resolve, reject) => {
-    const data = body ? JSON.stringify(body) : null;
     const u = new URL(`${SUPABASE_URL}/rest/v1${path}`);
-    const req = https.request({
-      hostname: u.hostname, path: u.pathname + u.search, method,
-      headers: {
-        'apikey': SUPABASE_KEY,
-        'Authorization': `Bearer ${SUPABASE_KEY}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'resolution=merge-duplicates',
-        ...(data ? { 'Content-Length': Buffer.byteLength(data) } : {})
-      }
-    }, res => {
-      let raw = '';
-      res.on('data', c => raw += c);
-      res.on('end', () => {
-        try { resolve(raw ? JSON.parse(raw) : {}); } catch { resolve({}); }
-      });
-    });
-    req.on('error', reject);
-    if (data) req.write(data);
-    req.end();
+    https
+      .get(
+        {
+          hostname: u.hostname,
+          path: u.pathname + u.search,
+          headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
+            Accept: 'application/json',
+          },
+        },
+        (res) => {
+          let raw = '';
+          res.on('data', (c) => (raw += c));
+          res.on('end', () => {
+            if (res.statusCode >= 400) {
+              return reject(new Error(`Supabase ${res.statusCode}: ${raw}`));
+            }
+            try {
+              resolve(raw ? JSON.parse(raw) : []);
+            } catch {
+              resolve([]);
+            }
+          });
+        }
+      )
+      .on('error', reject);
   });
 }
 
-function sendTelegram(text) {
-  return new Promise((resolve, reject) => {
-    const data = JSON.stringify({ chat_id: TELEG_CHAT, text, parse_mode: 'HTML' });
-    const req = https.request({
-      hostname: 'api.telegram.org',
-      path: `/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }
-    }, res => { res.resume(); res.on('end', resolve); });
-    req.on('error', reject);
+// ----------------------------------------------------------------------------
+// Telegram
+// ----------------------------------------------------------------------------
+function tgSend(chatId, text) {
+  return new Promise((resolve) => {
+    const data = JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true });
+    const req = https.request(
+      {
+        hostname: 'api.telegram.org',
+        path: `/bot${TG_TOKEN}/sendMessage`,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+      },
+      (res) => {
+        res.resume();
+        res.on('end', resolve);
+      }
+    );
+    req.on('error', () => resolve());
     req.write(data);
     req.end();
   });
 }
 
-async function diaLogin() {
-  const res = await diaPostBody({ login: {
-    username: process.env.DIA_USERNAME,
-    password: process.env.DIA_PASSWORD,
-    disconnect_same_user: true,
-    lang: 'tr',
-    params: { apikey: process.env.DIA_API_KEY }
-  }});
-  if (res.code !== '200') throw new Error('DIA login failed: ' + JSON.stringify(res));
-  return res.msg;
+async function tgSendAll(text) {
+  // Spec madde 8: rapor Can'a gider. TELEGRAM_CHAT_ID birincil; ADMIN_TELEGRAM_IDS ek fallback.
+  const targets = new Set();
+  if (TG_CHAT) targets.add(String(TG_CHAT));
+  for (const id of ADMIN_IDS) targets.add(String(id));
+  for (const id of targets) await tgSend(id, text);
 }
 
-const SATISTURLERI = ['Toptan Satış', 'Perakende Satış', 'Verilen Hizmet'];
-const IADETURLERI	  = ['Toptan Satış İade', 'Perakende Satış İade', 'Alınan Fiyat Farkı', 'Verilen Fiyat Farkı'];
-const GIDERTURLERI  = ['Alınan Hizmet', 'Mal Alım'];
-
-async function bugunkuFaturalar(sessionId, bugun) {
-  const res = await diaPostBody({ scf_fatura_listele: {
-    session_id: sessionId, firma_kodu: FIRMA, donem_kodu: DONEM,
-    filters: [{ field: 'tarih', operator: '=', value: bugun }],
-    sorts: [{ field: 'fisno', sorttype: 'ASC' }],
-    params: { __selectHeader: ['_aciklama', 'fisno','belgeno2','tarih','turuaciklama','toplamFaturaTutari','toplamFaturaMaliyeti','_key_scf_carikart','carifirma','kar','y_kar'] },
-    limit: 500, offset: 0
-  }});
-  if (res.code !== '200') throw new Error('Fatura listesi alınamadı');
-  return res.result || [];
+// ----------------------------------------------------------------------------
+// Veri çekme
+// ----------------------------------------------------------------------------
+async function getSatislar(tarih) {
+  // vw_gunluk_satis_karlilik: fatura_tipi='satis' AND gider_kalemi_mi=false
+  const path =
+    `/vw_gunluk_satis_karlilik?tarih=eq.${tarih}` +
+    `&select=tarih,fatura_no,cari_unvan,kdv_haric_satis,defter_maliyet,defter_kar,defter_marj,maliyetsiz_mi,stok_kodu` +
+    `&order=fatura_no.asc`;
+  return supGet(path);
 }
 
-function hesaplaFaturaOzeti(faturalar) {
-  let ciro = 0, kar = 0, iadeToplami = 0;
-  const sifirMaliyetUyari = [];
-  const cariler = {};
+async function getAlislar(tarih) {
+  const path =
+    `/vw_gunluk_alis?tarih=eq.${tarih}` +
+    `&select=fatura_no,cari_unvan,kdv_haric_tutar` +
+    `&order=fatura_no.asc`;
+  return supGet(path);
+}
 
-  for (const f of faturalar) {
-    const turu   = f.turuaciklama || '';
-    const tutar  = parseFloat(f.toplamFaturaTutari || 0);
-    const maliyet = parseFloat(f.toplamFaturaMaliyeti || 0);
-    const fKar   = parseFloat(f.kar || 0);
-    const fisNo  = f.belgeno2 || f.fisno || '';
-    const cariAdi = f.carifirma || '';
-    const cariKey = f._key_scf_carikart || '';
+async function getMaliyetsizDetay(tarih) {
+  // Maliyetsiz satırların stok_kodu + fatura_no eşlemesini al (spec uyarı bölümü için).
+  const path =
+    `/dia_karlilik_raporu?tarih=eq.${tarih}` +
+    `&fatura_tipi=eq.satis&maliyetsiz_mi=is.true` +
+    `&select=fatura_no,stok_kodu,stok_adi`;
+  return supGet(path);
+}
 
-    if (SATISTURLERI-ncludes(turu)) {
-      if (maliyet === 0) {
-        sifirMaliyetUyari.push(`${fisNo} - ${cariAdi}`);
-      }
-      ciro += tutar;
-      kar  += fKar;
-      if (cariKey) {
-        if (!cariler[cariKey]) cariler[cariKey] = { cari_kodu: String(cariKey), cari_adi: cariAdi, ciro: 0 };
-        cariler[cariKey].ciro += tutar;
-      }
-    } else if (IADETURLERI.includes(turu)) {
-      iadeToplami += tutar;
-      ciro -= tutar;
-      kar  -= fKar;
+// ----------------------------------------------------------------------------
+// Rapor metnini oluştur
+// ----------------------------------------------------------------------------
+function olusturRapor(tarih, satislar, alislar, maliyetsizDetay) {
+  const baslik = `📊 NAPOL GÜNLÜK RAPOR — ${trDate(tarih)}`;
+
+  // ---- Satış / Alış özet ----
+  const satisFaturaSayisi = satislar.length;
+  const satisToplam = satislar.reduce((a, r) => a + Number(r.kdv_haric_satis || 0), 0);
+  const alisFaturaSayisi = alislar.length;
+  const alisToplam = alislar.reduce((a, r) => a + Number(r.kdv_haric_tutar || 0), 0);
+
+  let msg = '';
+  msg += `${baslik}\n\n`;
+  msg += `💰 SATIŞ\n`;
+  msg += `Fatura sayısı: ${satisFaturaSayisi}\n`;
+  msg += `Toplam tutar: ${fmtTL(satisToplam)} (KDV'siz)\n\n`;
+  msg += `🛒 ALIŞ\n`;
+  msg += `Fatura sayısı: ${alisFaturaSayisi}\n`;
+  msg += `Toplam tutar: ${fmtTL(alisToplam)} (KDV'siz)\n`;
+
+  // ---- Fatura bazında kârlılık ----
+  if (satisFaturaSayisi > 0) {
+    msg += `\n📈 FATURA BAZINDA KÂRLILIK\n\n`;
+
+    for (const s of satislar) {
+      const defterKar  = Number(s.defter_kar || 0);
+      const defterMarj = Number(s.defter_marj || 0);
+      // Faz 1: Kâr 1 ve fark hesaplanamıyor → "—"
+      const cari = (s.cari_unvan || '').trim();
+      msg += `${s.fatura_no} — ${cari}\n`;
+      msg += `  Kâr (güncel kur): — (kalem sync bekleniyor)\n`;
+      msg += `  Kâr (defter):    ${fmtTL(defterKar)} (${fmtYuzde(defterMarj)})\n`;
+      msg += `  Fark:            —\n\n`;
     }
   }
 
-  return { ciro, kar, iadeToplami, sifirMaliyetUyari, cariler: Object.values(cariler) };
-}
-
-async function cekleriGetir(sessionId) {
-  const res = await diaPostBcs({ bcs_ceksenet_listele: {
-    session_id: sessionId, firma_kodu: FIRMA, donem_kodu: DONEM,
-    filters: [{ field: 'durum', operator: '=', value: 'Portföyde' }],
-    sorts:   [{ field: 'vade',  sorttype: 'ASC' }],
-    params:  { __selectHeader: ['_aciklama', 'ceksenetno','vade','tutar','cariadi','banka','durum'] },
-    limit: 200, offset: 0
-  }});
-  if (res.code !== '200') return [];
-  return res.result || [];
-}
-
-function yaklasanCekler(cekler, bugun) {
-  const bugunDate = new Date(bugun);
-  const yediGunSonra = new Date(bugun);
-  yediGunSonra.setDate(yediGunSonra.getDate() + 7);
-  return cekler.filter(c => {
-    const vade = new Date(c.vade);
-    return vade >= bugunDate && vade <= yediGunSonra;
-  });
-}
-
-ansync function cariUpsert(cariler, bugun) {
-  if (!cariler.length) return;
-  const rows = cariler.map(c => ({
-    cari_kodu: c.cari_kodu, cari_adi: c.cari_adi,
-    son_fatura_tarihi: bugun, toplam_ciro: c.ciro,
-    kayak: 'fatura_otomatik', guncelleme_tarihi: new Date().toISOString()
-  }));
-  await supFetch('/dia_cariler?on_conflict=cari_kodu', 'POST', rows);
-}
-
-function formatPara(sayi) {
-  return sayi.toLocaleString('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-}
-
-function olusturMesaj(bugun, ozet, cekler, yaklasan) {
-  const marj = ozet.ciro > 0 ? ((ozet.kar / ozet.ciro) * 100).toFixed(1) : '0.0';
-  let msg = `📈 <b>Günlük Rapor — ${bugun}</b>\n\n`;
-  msg += `💰 <b>Ciro:</b> ${formatPara(ozet.ciro)} ₺\n✅ <b>Kar:</b> ${formatPara(ozet.kar)} ₺ (%${marj})\n`;
-  if (ozet.iadeToplami > 0) msg += `jɋ/ • <b>İade:</b> ${formatPara(ozet.iadeToplami)} ₺\n`;
-  if (ozet.sifirMaliyetUyari.length > 0) {
-    msg += `\n⚠️ <b>MALİVETSİZ SATış FATURALARI:</b>\n`;
-    for (const u of ozet.sifirMaliyetUyari) msg += `  • ${u}\n`;
-  }
-  msg += `\n📋 <b>Portföydeki Çekler:</b> ${cekler.length} adet\n`;
-  if (yaklasan.length > 0) {
-    msg += `\n⏰ <b>Yaklaşan Çekler (7 gün):</b>\n`;
-    for (const c of yaklasan) {
-      msg += `  . ${c.vade} — ${formatPara(parseFloat(c.tutar))} ₺`;
-      if (c.cariadi) msg += ` — ${c.cariadi}`;
-      msg += '\n';
+  // ---- Maliyet eksik uyarısı ----
+  if (maliyetsizDetay && maliyetsizDetay.length > 0) {
+    // Spec madde 4 → "MALİYET EKSİK" başlığı altında fatura bazında stok kodları
+    const gruplar = {};
+    for (const r of maliyetsizDetay) {
+      const fno = r.fatura_no || '(faturasız)';
+      if (!gruplar[fno]) gruplar[fno] = [];
+      if (r.stok_kodu) gruplar[fno].push(r.stok_kodu);
     }
-  } else {
-    msg += `  Önümüzdeki 7 günde vadesi gelen çek yok.\n`;
+    msg += `⚠️ MALİYET EKSİK\n`;
+    for (const [fno, stoklar] of Object.entries(gruplar)) {
+      const adet = stoklar.length || 1;
+      msg += `${fno} — ${adet} satırda maliyet=0\n`;
+      if (stoklar.length > 0) {
+        msg += `  Stok kodları: ${stoklar.join(', ')}\n`;
+      }
+    }
+    msg += `\n`;
   }
+
+  // ---- TOPLAM ----
+  const toplamDefterKar = satislar.reduce((a, r) => a + Number(r.defter_kar || 0), 0);
+  const defterMarj = satisToplam > 0 ? (toplamDefterKar / satisToplam) * 100 : 0;
+
+  msg += `────────────────\n`;
+  msg += `TOPLAM\n`;
+  msg += `Kâr (güncel kur): — (kalem sync bekleniyor — Faz 2)\n`;
+  msg += `Kâr (defter):    ${fmtTL(toplamDefterKar)} — Marj: ${fmtYuzde(defterMarj)}\n`;
+  msg += `Kur farkı etkisi: — (Faz 2)\n`;
+
+  // ---- Veri yok durumu ----
+  if (satisFaturaSayisi === 0 && alisFaturaSayisi === 0) {
+    msg += `\nℹ️ Bugün karlılık tablosunda hiç satış veya alış faturası yok.\n`;
+    msg += `   (dia_karlilik_raporu tablosu SCF2240A çağrısı ile güncellenmeli — Faz 2'de otomatize edilecek.)\n`;
+  }
+
   return msg;
 }
 
+// ----------------------------------------------------------------------------
+// Handler
+// ----------------------------------------------------------------------------
 module.exports = async (req, res) => {
-  if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+  // Vercel cron: Authorization: "Bearer <CRON_SECRET>"
+  // Manuel: ?token=... veya x-cron-secret header'ı
+  const auth   = req.headers?.authorization || '';
+  const tokenQ = req.query?.token;
+  const tokenH = req.headers?.['x-cron-secret'];
+  const ok =
+    (CRON_SECRET && auth === `Bearer ${CRON_SECRET}`) ||
+    (CRON_SECRET && (tokenQ === CRON_SECRET || tokenH === CRON_SECRET));
+
+  if (!ok) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
+
   try {
-    const bugun = new Date().toLocaleDateString('sven-SE', { timeZone: 'Europe/Istanbul' });
-    const sessionId = await diaLogin();
-    const [faturalar, cekler] = await Promise.all([
-      bugunkuFaturalar(sessionId, bugun),
-      cekleriGetir(sessionId)
+    // ?tarih=YYYY-MM-DD ile manuel tarih (test için); yoksa bugün TR.
+    const tarih = (req.query?.tarih || '').match(/^\d{4}-\d{2}-\d{2}$/)
+      ? req.query.tarih
+      : trTarihBugunIstanbul();
+
+    const [satislar, alislar, maliyetsiz] = await Promise.all([
+      getSatislar(tarih),
+      getAlislar(tarih),
+      getMaliyetsizDetay(tarih),
     ]);
-    const ozet = hesaplaFaturaOzeti(faturalar);
-    const yaklasan = yaklasanCekler(cekler, bugun);
-    cariUpsert(ozet.cariler, bugun).catch(e => console.error('Cari upsert hata:', e));
-    const mesaj = olusturMesaj(bugun, ozet, cekler, yaklasan);
-    await sendTelegram(mesaj);
-    return res.status(200).json({ ok: true, tarih: bugun, fatura: faturalar.length, cek: cekler.length });
+
+    const rapor = olusturRapor(tarih, satislar, alislar, maliyetsiz);
+
+    // Önizleme modu (dry-run): ?dry=1 → Telegram'a yollamadan response döner.
+    if (req.query?.dry === '1') {
+      return res.status(200).json({ ok: true, tarih, rapor });
+    }
+
+    await tgSendAll(rapor);
+
+    return res.status(200).json({
+      ok: true,
+      tarih,
+      satis_sayisi: satislar.length,
+      alis_sayisi: alislar.length,
+      maliyetsiz_satir: (maliyetsiz || []).length,
+    });
   } catch (err) {
     console.error('daily-report hata:', err);
-    await sendTelegram(`❌ Günlük rapor htaası: ${err.message}`).catch(() => {});
-    return res.status(500).json({ error: err.message });
+    await tgSendAll(`❌ Günlük rapor hatası: ${err.message}`).catch(() => {});
+    return res.status(500).json({ ok: false, error: err.message });
   }
 };
