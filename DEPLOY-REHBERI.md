@@ -90,7 +90,7 @@ Vercel → `napolzeka` projesi → Settings → Environment Variables.
 **Yeni eklenecek:**
 | İsim | Değer | Açıklama |
 |------|-------|----------|
-| `CRON_SECRET` | rastgele uzun string (örn. `openssl rand -hex 32`) | Cron endpoint'lerinin auth'u. Üç yeni endpoint de bunu kontrol eder. |
+| `NAPOL_CRON_SECRET` | rastgele uzun string (örn. `openssl rand -hex 32`) | Cron endpoint'lerinin auth'u. Üç yeni endpoint de bunu kontrol eder. |
 
 **Var olduğunu varsaydığımız (kontrol edin):**
 - `SUPABASE_URL`
@@ -106,28 +106,28 @@ Değişiklikten sonra **Redeploy** gerekir (env değişiklik anında yansımıyo
 
 ## Adım 4 — Manuel test (deploy sonrası)
 
-`<CRON_SECRET>` yerine ayarladığın değeri koy. URL'ler yeni deployment URL'inde:
+`<NAPOL_CRON_SECRET>` yerine ayarladığın değeri koy. URL'ler yeni deployment URL'inde:
 
 ```bash
 # 1) TCMB kuru çek (önce bunu çalıştır — diğer testler için fallback hazır olsun)
 curl -X GET 'https://napolzeka.vercel.app/api/tcmb-sync' \
-  -H 'Authorization: Bearer <CRON_SECRET>'
+  -H 'Authorization: Bearer <NAPOL_CRON_SECRET>'
 
 # 2) Günlük raporu DRY RUN ile dene (Telegram'a göndermez, response'ta metni döner)
 curl 'https://napolzeka.vercel.app/api/daily-report?dry=1' \
-  -H 'Authorization: Bearer <CRON_SECRET>'
+  -H 'Authorization: Bearer <NAPOL_CRON_SECRET>'
 
 # 3) Belirli bir tarih için günlük rapor (test için)
 curl 'https://napolzeka.vercel.app/api/daily-report?tarih=2026-04-30&dry=1' \
-  -H 'Authorization: Bearer <CRON_SECRET>'
+  -H 'Authorization: Bearer <NAPOL_CRON_SECRET>'
 
 # 4) Geçen haftanın haftalık raporu (DRY RUN)
 curl 'https://napolzeka.vercel.app/api/weekly-report?dry=1' \
-  -H 'Authorization: Bearer <CRON_SECRET>'
+  -H 'Authorization: Bearer <NAPOL_CRON_SECRET>'
 
 # 5) Belirli aralık için (test) — 20-24 Mayıs örneği gibi
 curl 'https://napolzeka.vercel.app/api/weekly-report?pzt=2026-04-27&cum=2026-05-01&dry=1' \
-  -H 'Authorization: Bearer <CRON_SECRET>'
+  -H 'Authorization: Bearer <NAPOL_CRON_SECRET>'
 ```
 
 DRY çıktısı tatmin ediciyse, `?dry=1` parametresini çıkararak gerçek bir test gönderimi yapabilirsin (Telegram'a düşer).

@@ -18,7 +18,7 @@ const TG_TOKEN     = process.env.TELEGRAM_BOT_TOKEN;
 const TG_CHAT      = process.env.TELEGRAM_CHAT_ID;
 const ADMIN_IDS    = (process.env.ADMIN_TELEGRAM_IDS || '')
   .split(',').map((s) => s.trim()).filter(Boolean);
-const CRON_SECRET  = process.env.CRON_SECRET;
+const CRON_SECRET  = process.env.NAPOL_CRON_SECRET;
 
 // ----------------------------------------------------------------------------
 // Format yardımcıları (Türkçe konvansiyon: binlik nokta, ondalık virgül)
