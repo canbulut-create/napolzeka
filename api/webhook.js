@@ -193,11 +193,7 @@ async function execVergi({ islem, ay, yil }) {
   return JSON.stringify({ hata: 'Ge\u00E7ersiz i\u015Flem' });
 }
 
-// ==================== KARLILIK ====================
-// DIA'da maliyet hen\u00FCz i\u015Flenmemi\u015F sat\u0131\u015Flar i\u00E7in varsay\u0131lan br\u00FCt k\u00E2r oran\u0131
-const MALIYETSIZ_TAHMINI_BRUT_MARJ = 0.15; // %15
-
-// DIA bilgileri (di\u011Fer komutlar i\u00E7in - generateMorningReport kullan\u0131yor)
+// ==================== DIA HELPERS (generateMorningReport i\u00E7in) ====================
 const DIA_URL_K = `https://${process.env.DIA_SERVER}.ws.dia.com.tr/api/v3`;
 const DIA_FIRMA_K = parseInt(process.env.DIA_FIRMA || '2');
 const DIA_DONEM_K = parseInt(process.env.DIA_DONEM || '3');
@@ -220,227 +216,6 @@ async function diaCallK(endpoint, body) {
   const d = await res.json();
   if (String(d.code) !== '200') throw new Error(`DIA: ${d.msg || d.code}`);
   return d;
-}
-
-// Para format\u0131: 34.257.926,83 \u20BA
-function fmtTL(n) { return Number(n||0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' \u20BA'; }
-// Y\u00FCzde format\u0131: %35,4
-function fmtPct(n, d = 1) { return '%' + Number(n||0).toLocaleString('tr-TR', { minimumFractionDigits: d, maximumFractionDigits: d }); }
-// Tarih ge\u00E7erlilik kontrol\u00FC YYYY-MM-DD
-function isValidDate(s) { return /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(new Date(s).getTime()); }
-
-// Yetki kontrol\u00FC: admin/manager veya permissions \u00FCzerinden 'karlilik'
-function karlilikYetkili(user) {
-  if (!user) return false;
-  if (user.role === 'admin' || user.role === 'manager') return true;
-  const p = user.permissions;
-  if (Array.isArray(p) && p.includes('karlilik')) return true;
-  if (typeof p === 'string') { try { return JSON.parse(p).includes('karlilik'); } catch(e) {} }
-  return false;
-}
-
-// Preset tarih aral\u0131\u011F\u0131 hesapla
-function karlilikTarihAraligi(preset) {
-  const now = new Date();
-  const y = now.getFullYear(), m = now.getMonth();
-  const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  if (preset === 'bu_ay') return [fmt(new Date(y, m, 1)), fmt(new Date(y, m+1, 0))];
-  if (preset === 'gecen_ay') return [fmt(new Date(y, m-1, 1)), fmt(new Date(y, m, 0))];
-  if (preset === 'son_3_ay') return [fmt(new Date(y, m-2, 1)), fmt(new Date(y, m+1, 0))];
-  if (preset === 'yba') return [fmt(new Date(y, 0, 1)), fmt(new Date(y, m+1, 0))];
-  return null;
-}
-
-// Karl\u0131l\u0131k butonlar\u0131
-function karlilikPresetKeyboard() {
-  return { inline_keyboard: [
-    [ { text: '\uD83D\uDCC5 Bu ay', callback_data: 'kl_p_bu_ay' }, { text: '\uD83D\uDCC5 Ge\u00E7en ay', callback_data: 'kl_p_gecen_ay' } ],
-    [ { text: '\uD83D\uDCC5 Son 3 ay', callback_data: 'kl_p_son_3_ay' }, { text: '\uD83D\uDCC5 Y\u0131l ba\u015F\u0131ndan bug\u00FCne', callback_data: 'kl_p_yba' } ],
-    [ { text: '\uD83D\uDCC5 \u00D6zel tarih', callback_data: 'kl_p_ozel' } ]
-  ]};
-}
-
-function karlilikDetayKeyboard(basTarih, bitTarih) {
-  return { inline_keyboard: [
-    [ { text: '\uD83C\uDFC6 En k\u00E2rl\u0131 5 m\u00FC\u015Fteri', callback_data: `kl_t_${basTarih}_${bitTarih}` } ],
-    [ { text: '\uD83D\uDCB8 En b\u00FCy\u00FCk 5 gider', callback_data: `kl_g_${basTarih}_${bitTarih}` } ]
-  ]};
-}
-
-async function sendKeyboard(chatId, text, keyboard) {
-  await fetch(`${TG}/sendMessage`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML', reply_markup: keyboard })
-  }).catch(() => {});
-}
-
-async function answerCallback(callbackId, text) {
-  await fetch(`${TG}/answerCallbackQuery`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ callback_query_id: callbackId, text: text || '' })
-  }).catch(() => {});
-}
-
-// ==================== KARLILIK SUPABASE QUERIES ====================
-async function karlilikOzetCek(basTarih, bitTarih) {
-  // Tek seferde kay\u0131tlar\u0131 al, JS'te hesapla (PostgREST aggregate kar\u0131\u015F\u0131k oluyor)
-  const { data, error } = await supabase
-    .from('dia_karlilik_raporu')
-    .select('fis_turu, toplam_tutar, kar, maliyetsiz_mi, fatura_no, cari_unvan')
-    .gte('tarih', basTarih).lte('tarih', bitTarih)
-    .limit(10000);
-  if (error) throw new Error(`Supabase: ${error.message}`);
-  const rows = data || [];
-  let ciro = 0, brutKar = 0, toplamGider = 0, netKar = 0;
-  const maliyetsiz = [];
-  for (const r of rows) {
-    const tutar = Number(r.toplam_tutar || 0);
-    const kar = Number(r.kar || 0);
-    if (r.fis_turu === 'TS') {
-      ciro += tutar;
-      // Maliyetsiz satışlar için DIA'da kar = tutar (kar_orani=100) yazılı,
-      // bu yanlış. Brüt kârı tutar*0.15 olarak varsayıyoruz.
-      const satisKar = r.maliyetsiz_mi ? (tutar * MALIYETSIZ_TAHMINI_BRUT_MARJ) : kar;
-      brutKar += satisKar;
-      netKar  += satisKar;
-      if (r.maliyetsiz_mi) maliyetsiz.push({ fatura_no: r.fatura_no, cari_unvan: r.cari_unvan });
-    } else if (r.fis_turu === 'AH') {
-      toplamGider += Math.abs(tutar);
-      netKar += kar; // gider satırı, kar değeri negatif
-    }
-  }
-  return { ciro, brutKar, toplamGider, netKar, maliyetsiz, kayitSayisi: rows.length };
-}
-
-async function karlilikTopMusteri(basTarih, bitTarih) {
-  const { data, error } = await supabase
-    .from('dia_karlilik_raporu')
-    .select('cari_unvan, toplam_tutar, kar, maliyetsiz_mi')
-    .eq('fis_turu', 'TS')
-    .gte('tarih', basTarih).lte('tarih', bitTarih)
-    .limit(10000);
-  if (error) throw new Error(`Supabase: ${error.message}`);
-  const map = {};
-  let hasMaliyetsiz = false;
-  for (const r of data || []) {
-    const ad = r.cari_unvan || '(bilinmeyen)';
-    if (!map[ad]) map[ad] = { ciro: 0, kar: 0 };
-    const tutar = Number(r.toplam_tutar || 0);
-    // SQL: CASE WHEN maliyetsiz_mi = false THEN kar ELSE toplam_tutar * 0.15 END
-    const satisKar = r.maliyetsiz_mi ? (tutar * MALIYETSIZ_TAHMINI_BRUT_MARJ) : Number(r.kar || 0);
-    map[ad].ciro += tutar;
-    map[ad].kar  += satisKar;
-    if (r.maliyetsiz_mi) hasMaliyetsiz = true;
-  }
-  const liste = Object.entries(map).map(([ad, v]) => ({
-    cari_unvan: ad,
-    ciro: v.ciro,
-    toplam_kar: v.kar,
-    ort_marj: v.ciro > 0 ? (v.kar / v.ciro) * 100 : 0
-  })).sort((a,b)=>b.toplam_kar-a.toplam_kar).slice(0,5);
-  return { liste, hasMaliyetsiz };
-}
-
-async function karlilikTopGider(basTarih, bitTarih) {
-  const { data, error } = await supabase
-    .from('dia_karlilik_raporu')
-    .select('cari_unvan, toplam_tutar')
-    .eq('fis_turu', 'AH')
-    .gte('tarih', basTarih).lte('tarih', bitTarih)
-    .limit(10000);
-  if (error) throw new Error(`Supabase: ${error.message}`);
-  const map = {};
-  for (const r of data || []) {
-    const ad = r.cari_unvan || '(bilinmeyen)';
-    if (!map[ad]) map[ad] = { gider: 0, sayi: 0 };
-    map[ad].gider += Math.abs(Number(r.toplam_tutar || 0));
-    map[ad].sayi += 1;
-  }
-  return Object.entries(map).map(([ad, v]) => ({
-    cari_unvan: ad, toplam_gider: v.gider, fatura_sayisi: v.sayi
-  })).sort((a,b)=>b.toplam_gider-a.toplam_gider).slice(0,5);
-}
-
-function karlilikOzetMesaji(basTarih, bitTarih, ozet) {
-  const { ciro, brutKar, toplamGider, netKar, maliyetsiz } = ozet;
-  const marj = ciro > 0 ? (brutKar / ciro) * 100 : 0;
-  let msg = `\uD83D\uDCCA <b>Karl\u0131l\u0131k \u00D6zeti</b>\n`;
-  msg += `\uD83D\uDCC5 ${basTarih} \u2013 ${bitTarih}\n\n`;
-  msg += `\uD83D\uDCB0 Ciro: ${fmtTL(ciro)}\n`;
-  msg += `\u2705 Br\u00FCt K\u00E2r: ${fmtTL(brutKar)} (${fmtPct(marj)})\n`;
-  msg += `\uD83D\uDCB8 Toplam Gider: ${fmtTL(toplamGider)}\n`;
-  msg += `\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n`;
-  msg += `\uD83C\uDFAF <b>Net K\u00E2r: ${fmtTL(netKar)}</b>\n`;
-  if (maliyetsiz.length > 0) {
-    msg += `\n\u26A0\uFE0F ${maliyetsiz.length} adet maliyetsiz sat\u0131\u015F var (DIA'da maliyet hen\u00FCz i\u015Flenmemi\u015F):\n`;
-    const goster = maliyetsiz.slice(0, 5).map(m => m.fatura_no || '(no yok)').join(', ');
-    msg += goster;
-    if (maliyetsiz.length > 5) msg += ` ve ${maliyetsiz.length - 5} adet daha`;
-  }
-  return msg;
-}
-
-async function karlilikGonder(chatId, basTarih, bitTarih, telegramId) {
-  if (!isValidDate(basTarih) || !isValidDate(bitTarih)) {
-    await sendHtml(chatId, '\u274C Tarih format\u0131 hatal\u0131. Kullan\u0131m: <code>/karlilik 2026-01-01 2026-04-30</code>');
-    return null;
-  }
-  if (basTarih > bitTarih) {
-    await sendHtml(chatId, '\u274C Ba\u015Flang\u0131\u00E7 tarihi biti\u015F tarihinden sonra olamaz.');
-    return null;
-  }
-  await typing(chatId);
-  let ozet;
-  try {
-    ozet = await karlilikOzetCek(basTarih, bitTarih);
-  } catch (e) {
-    await sendHtml(chatId, '\u274C Veritaban\u0131na \u015Fu an eri\u015Filemiyor, l\u00FCtfen tekrar deneyin.');
-    console.error('Karlilik ozet hata:', e.message);
-    return null;
-  }
-  if (ozet.kayitSayisi === 0) {
-    await sendHtml(chatId, `\u2139\uFE0F Bu tarih aral\u0131\u011F\u0131nda kay\u0131t bulunamad\u0131 (${basTarih} \u2013 ${bitTarih}).`);
-    await logQuery(telegramId, 'karlilik', `${basTarih} ${bitTarih}`, 'kayit yok');
-    return null;
-  }
-  const msg = karlilikOzetMesaji(basTarih, bitTarih, ozet);
-  await sendKeyboard(chatId, msg, karlilikDetayKeyboard(basTarih, bitTarih));
-  await logQuery(telegramId, 'karlilik', `${basTarih} ${bitTarih}`, msg);
-  return ozet;
-}
-
-async function karlilikTopMusteriGonder(chatId, basTarih, bitTarih, telegramId) {
-  await typing(chatId);
-  let result;
-  try { result = await karlilikTopMusteri(basTarih, bitTarih); }
-  catch (e) { await sendHtml(chatId, '\u274C Veritaban\u0131na \u015Fu an eri\u015Filemiyor, l\u00FCtfen tekrar deneyin.'); console.error(e.message); return; }
-  const { liste, hasMaliyetsiz } = result;
-  if (liste.length === 0) { await sendHtml(chatId, '\u2139\uFE0F Bu aral\u0131kta sat\u0131\u015F kayd\u0131 yok.'); return; }
-  let msg = `\uD83C\uDFC6 <b>En K\u00E2rl\u0131 5 M\u00FC\u015Fteri</b>\n\uD83D\uDCC5 ${basTarih} \u2013 ${bitTarih}\n\n`;
-  liste.forEach((m, i) => {
-    msg += `${i+1}. <b>${m.cari_unvan}</b>\n`;
-    msg += `   Ciro: ${fmtTL(m.ciro)} | K\u00E2r: ${fmtTL(m.toplam_kar)} (${fmtPct(m.ort_marj)})\n`;
-  });
-  if (hasMaliyetsiz) {
-    msg += `\n<i>Not: Maliyetsiz faturalar i\u00E7in %15 br\u00FCt k\u00E2r varsay\u0131m\u0131yla hesapland\u0131.</i>`;
-  }
-  await sendHtml(chatId, msg);
-  await logQuery(telegramId, 'karlilik_top_musteri', `${basTarih} ${bitTarih}`, msg);
-}
-
-async function karlilikTopGiderGonder(chatId, basTarih, bitTarih, telegramId) {
-  await typing(chatId);
-  let liste;
-  try { liste = await karlilikTopGider(basTarih, bitTarih); }
-  catch (e) { await sendHtml(chatId, '\u274C Veritaban\u0131na \u015Fu an eri\u015Filemiyor, l\u00FCtfen tekrar deneyin.'); console.error(e.message); return; }
-  if (liste.length === 0) { await sendHtml(chatId, '\u2139\uFE0F Bu aral\u0131kta gider kayd\u0131 yok.'); return; }
-  let msg = `\uD83D\uDCB8 <b>En B\u00FCy\u00FCk 5 Gider</b>\n\uD83D\uDCC5 ${basTarih} \u2013 ${bitTarih}\n\n`;
-  liste.forEach((g, i) => {
-    msg += `${i+1}. <b>${g.cari_unvan}</b>\n`;
-    msg += `   Tutar: ${fmtTL(g.toplam_gider)} | ${g.fatura_sayisi} fatura\n`;
-  });
-  await sendHtml(chatId, msg);
-  await logQuery(telegramId, 'karlilik_top_gider', `${basTarih} ${bitTarih}`, msg);
 }
 
 // ==================== MORNING REPORT ====================
@@ -518,49 +293,13 @@ async function runAgent(userMessage) {
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(200).json({ ok: true, msg: 'OpenClaw running' });
   try {
-    // ----- callback_query (inline keyboard) -----
+    // callback_query desteği şu an yok (mevcut komutlar inline keyboard kullanmıyor)
     if (req.body.callback_query) {
-      const cb = req.body.callback_query;
-      const cbChatId = cb.message && cb.message.chat ? cb.message.chat.id : null;
-      const cbData = cb.data || '';
-      const cbUser = await getOrCreateUser(cb.from);
-      await answerCallback(cb.id, '');
-      if (!cbChatId || !cbUser || !cbUser.is_active) return res.status(200).json({ ok: true });
-
-      // /karlilik callbacks
-      if (cbData.startsWith('kl_')) {
-        if (!karlilikYetkili(cbUser)) {
-          await send(cbChatId, '🚫 Bu komut için yetkiniz yok.');
-          return res.status(200).json({ ok: true });
-        }
-        // Preset seçimi
-        if (cbData.startsWith('kl_p_')) {
-          const preset = cbData.substring(5);
-          if (preset === 'ozel') {
-            await sendHtml(cbChatId, '📅 <b>Özel tarih aralığı</b>\n\nLütfen şu formatta yazın:\n<code>/karlilik 2026-01-01 2026-04-30</code>');
-            return res.status(200).json({ ok: true });
-          }
-          const aralik = karlilikTarihAraligi(preset);
-          if (!aralik) { await send(cbChatId, '❌ Geçersiz seçim.'); return res.status(200).json({ ok: true }); }
-          await karlilikGonder(cbChatId, aralik[0], aralik[1], cb.from.id);
-          return res.status(200).json({ ok: true });
-        }
-        // Top müşteri / gider
-        if (cbData.startsWith('kl_t_') || cbData.startsWith('kl_g_')) {
-          const parts = cbData.split('_');
-          // kl_t_YYYY-MM-DD_YYYY-MM-DD → ['kl', 't', 'YYYY-MM-DD', 'YYYY-MM-DD']
-          const tip = parts[1];
-          const bas = parts[2];
-          const bit = parts[3];
-          if (!isValidDate(bas) || !isValidDate(bit)) {
-            await send(cbChatId, '❌ Tarih bilgisi okunamadı.');
-            return res.status(200).json({ ok: true });
-          }
-          if (tip === 't') await karlilikTopMusteriGonder(cbChatId, bas, bit, cb.from.id);
-          else await karlilikTopGiderGonder(cbChatId, bas, bit, cb.from.id);
-          return res.status(200).json({ ok: true });
-        }
-      }
+      // Telegram'a 200 dön, callback'i sessizce yut
+      await fetch(`${TG}/answerCallbackQuery`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ callback_query_id: req.body.callback_query.id })
+      }).catch(() => {});
       return res.status(200).json({ ok: true });
     }
 
@@ -575,13 +314,13 @@ module.exports = async function handler(req, res) {
 
     // /start
     if (command === '/start') {
-      await send(chatId, `\uD83D\uDC4B Merhaba ${user.full_name}!\n\nBen OpenClaw Agent, Napol Global \u015Firket asistan\u0131y\u0131m.\n\n\uD83D\uDCCA /karlilik 2026-01-01 2026-03-31 \u2014 Karl\u0131l\u0131k\n\uD83D\uDCC4 /rapor \u2014 G\u00FCnl\u00FCk \u00E7ek raporu\n\uD83D\uDCCF /limit \u2014 Limit durumu\n\u2753 /yardim \u2014 Yard\u0131m`);
+      await send(chatId, `\uD83D\uDC4B Merhaba ${user.full_name}!\n\nBen OpenClaw Agent, Napol Global \u015Firket asistan\u0131y\u0131m.\n\n\uD83D\uDCC4 /rapor \u2014 G\u00FCnl\u00FCk \u00E7ek raporu\n\uD83D\uDCCF /limit \u2014 Limit durumu\n\u2753 /yardim \u2014 Yard\u0131m`);
       await logQuery(msg.from.id, 'start', text, ''); return res.status(200).json({ ok: true });
     }
 
     // /yardim
     if (command === '/yardim' || command === '/help') {
-      await send(chatId, `\uD83D\uDCDA <b>OpenClaw Rehber</b>\n\nDo\u011Fal dilde soru sor:\n\u2022 "OSEKA bakiyesi"\n\u2022 "Bize en bor\u00E7lu 5 firma"\n\u2022 "Bu hafta vadesi gelen \u00E7ekler"\n\u2022 "Son faturalar"\n\n\uD83D\uDCCA /karlilik 2026-01-01 2026-03-31\n\uD83D\uDCC4 /rapor\n\uD83D\uDCCF /limit`);
+      await send(chatId, `\uD83D\uDCDA <b>OpenClaw Rehber</b>\n\nDo\u011Fal dilde soru sor:\n\u2022 "OSEKA bakiyesi"\n\u2022 "Bize en bor\u00E7lu 5 firma"\n\u2022 "Bu hafta vadesi gelen \u00E7ekler"\n\u2022 "Son faturalar"\n\n\uD83D\uDCC4 /rapor\n\uD83D\uDCCF /limit`);
       return res.status(200).json({ ok: true });
     }
 
@@ -602,35 +341,6 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // /karlilik
-    if (command === '/karlilik') {
-      if (!karlilikYetkili(user)) {
-        await send(chatId, '\uD83D\uDEAB Bu komut i\u00E7in yetkiniz yok.');
-        return res.status(200).json({ ok: true });
-      }
-      const parts = text.split(/\s+/);
-      const p1 = parts[1] || null;
-      const p2 = parts[2] || null;
-      if (!p1) {
-        await sendKeyboard(chatId,
-          '\uD83D\uDCCA <b>Karl\u0131l\u0131k Raporu</b>\n\nHangi tarih aral\u0131\u011F\u0131 i\u00E7in hesaplayay\u0131m?',
-          karlilikPresetKeyboard()
-        );
-        return res.status(200).json({ ok: true });
-      }
-      if (!isValidDate(p1) || (p2 && !isValidDate(p2))) {
-        await sendHtml(chatId, '\u274C Tarih format\u0131 hatal\u0131.\nKullan\u0131m: <code>/karlilik 2026-01-01 2026-04-30</code>');
-        return res.status(200).json({ ok: true });
-      }
-      // p2 yoksa o ay\u0131n sonu
-      let bitTarih = p2;
-      if (!bitTarih) {
-        const d = new Date(p1);
-        bitTarih = new Date(d.getFullYear(), d.getMonth()+1, 0).toISOString().split('T')[0];
-      }
-      await karlilikGonder(chatId, p1, bitTarih, msg.from.id);
-      return res.status(200).json({ ok: true });
-    }
 
     // /ogren
     if (command === '/ogren') {

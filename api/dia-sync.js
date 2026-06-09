@@ -6,7 +6,7 @@
 //   stok-test        : İlk 5 stok kartını çekip raw_data ile döndür (debug)
 //   kalem            : scf_fatura_listele_ayrintili, tarih veya from/to ile, upsert
 //   kalem-test       : Belirtilen tarihin ilk 5 kalemini raw döndür (debug)
-//   karlilik-sync    : rpr_raporsonuc_getir (SCF2240A), tarih aralığı ile, dia_karlilik_raporu upsert
+//   depo-satis-sync  : rpr_raporsonuc_getir (SCF9009A), ayın 1'inden bugüne, dia_depo_satis_raporu upsert
 //   rapor-params     : DIA rapor parametrelerini öğrenme (debug)
 //   rapor-cek        : Genel rapor çekme (debug)
 //
@@ -262,7 +262,7 @@ async function syncKalemler(sessionId, firmaKodu, donemKodu, { from, to }) {
 }
 
 // ============================================================================
-// Karlilik sync — SCF2240A raporu → dia_karlilik_raporu upsert
+// Depo Satış sync — SCF9009A raporu → dia_depo_satis_raporu upsert
 // ============================================================================
 async function diaRaporSonucGetir(sessionId, firmaKodu, donemKodu, raporKodu, tasarimKey, param) {
   const data = await diaCall('rpr/json', {
@@ -277,73 +277,87 @@ async function diaRaporSonucGetir(sessionId, firmaKodu, donemKodu, raporKodu, ta
   return data.result;
 }
 
-function karlilikSatirMap(r, raporTarihi) {
-  // SCF2240A rapor satırı field'ları (mevcut data'dan gözlemlenmiş):
-  // tarih, fatura_no/belgeno, fis_turu, cari_kodu, cari_unvan, stok_kodu, stok_adi,
-  // miktar, birim, birim_fiyat, toplam_tutar, maliyet, kar, kar_orani
-  const fatura_no = r.fatura_no || r.belgeno || r.belgeno2 || null;
-  const maliyet   = parseFloat(r.maliyet) || 0;
-  const toplam    = parseFloat(r.toplam_tutar ?? r.tutar) || 0;
-  const kar       = parseFloat(r.kar ?? (toplam - maliyet)) || 0;
-  const kar_orani = parseFloat(r.kar_orani) || (toplam !== 0 ? (kar / Math.abs(toplam)) * 100 : 0);
-
+// SCF9009A rapor satırı eşleme. Field adları DIA'dan dönen yapıya göre best-effort
+// fallback'lerle çözülüyor; ham satır `raw_data` jsonb içinde saklanıyor ki ileride
+// rapor parametreleri/sütunları değiştiğinde tabloyu drop etmeden uyarlanabilsin.
+function depoSatisSatirMap(r, raporTarihi) {
+  const fatura_no = r.fatura_no || r.belgeno || r.belgeno2 || r.fisno || null;
+  const toplam    = parseFloat(r.toplam_tutar ?? r.tutar ?? r.toplamFaturaTutari) || 0;
+  const miktar    = parseFloat(r.miktar ?? r.anamiktar) || null;
+  const birim_fiyat = parseFloat(r.birim_fiyat ?? r.birimfiyati ?? r.yerelbirimfiyati) || null;
   return {
     tarih:         r.tarih || raporTarihi,
     fatura_no,
     fis_turu:      r.fis_turu || r.turuaciklama || null,
     cari_kodu:     r.cari_kodu || r.carikodu || null,
-    cari_unvan:    r.cari_unvan || r.carifirma || null,
-    stok_kodu:     r.stok_kodu || r.stokkartkodu || null,
-    stok_adi:      r.stok_adi || r.aciklama || null,
-    miktar:        parseFloat(r.miktar) || null,
-    birim:         r.birim || null,
-    birim_fiyat:   parseFloat(r.birim_fiyat) || null,
+    cari_unvan:    r.cari_unvan || r.carifirma || r.cariadi || null,
+    stok_kodu:     r.stok_kodu || r.stokkartkodu || r.kartkodu || null,
+    stok_adi:      r.stok_adi || r.aciklama || r.kartaciklama || null,
+    depo_kodu:     r.depo_kodu || r.depokodu || r._key_sis_depo || null,
+    depo_adi:      r.depo_adi || r.depoadi || null,
+    miktar,
+    birim:         r.birim || r.fatbirimi || null,
+    birim_fiyat,
     toplam_tutar:  toplam,
-    maliyet,
-    kar,
-    kar_orani,
-    maliyetsiz_mi: maliyet === 0 && toplam > 0,
-    gider_kalemi_mi: (r.fis_turu || '').toLowerCase().includes('gider') || false,
-    doviz:         r.doviz || 'TRY',
+    doviz:         r.doviz || r.kalemdovizi || 'TRY',
+    raw_data:      r,
     yukleme_tarihi: new Date().toISOString(),
   };
 }
 
-async function syncKarlilik(sessionId, firmaKodu, donemKodu, { from, to, raporKodu = 'SCF2240A', tasarimKey = 808 }) {
-  // DIA SCF2240A rapor parametreleri: param objesinde tarih aralığı verilir.
-  // Tasarım key 808 mevcut dia-sync.js'in commit history'sinden (c2fbf23: "tasarim_key 807->808").
+async function syncDepoSatis(sessionId, firmaKodu, donemKodu, { from, to, raporKodu, tasarimKey }) {
+  raporKodu  = raporKodu  || process.env.DIA_DEPO_RAPOR_KODU  || 'SCF9009A';
+  tasarimKey = tasarimKey || process.env.DIA_DEPO_TASARIM_KEY || 0;
+  if (!tasarimKey || parseInt(tasarimKey) === 0) {
+    return { toplam: 0, not: 'DIA_DEPO_TASARIM_KEY env değişkeni tanımlı değil. ?type=rapor-params&rapor=SCF9009A ile keşfedin.' };
+  }
+  // Param adları SCF9009A için keşfedilince güncellenecek. Şimdilik yaygın isimler.
   const param = {
-    // DIA rapor parametreleri rapor tasarımına göre değişebilir; aşağıdaki anahtarlar
-    // SCF2240A için yaygın isimler. İlk canlı çağrıdan sonra param adı net olur.
-    tarih_bas: from,
-    tarih_son: to,
+    tarih_bas:  from,
+    tarih_son:  to,
+    fistarihi1: from,
+    fistarihi2: to,
   };
   const raporSonuc = await diaRaporSonucGetir(sessionId, firmaKodu, donemKodu, raporKodu, tasarimKey, param);
 
-  // raporSonuc tipik olarak satır dizisi (yeni format) veya { data: [...] } (eski format)
-  const satirlar = Array.isArray(raporSonuc) ? raporSonuc :
-                    Array.isArray(raporSonuc?.data) ? raporSonuc.data : [];
+  // raporSonuc tipik olarak satır dizisi veya { data: [...] }; bazen base64
+  let satirlar = [];
+  if (Array.isArray(raporSonuc)) satirlar = raporSonuc;
+  else if (Array.isArray(raporSonuc?.data)) satirlar = raporSonuc.data;
+  else if (typeof raporSonuc === 'string') {
+    try {
+      const dec = Buffer.from(raporSonuc, 'base64').toString('utf-8');
+      const json = JSON.parse(dec);
+      satirlar = json.__rows || json.rows || json.data || [];
+    } catch { /* parse edilemezse boş */ }
+  }
 
   if (satirlar.length === 0) {
     return { toplam: 0, not: 'Rapor sonucu boş veya beklenmeyen formatta', raw_sample: raporSonuc };
   }
 
-  const rows = satirlar.map(s => karlilikSatirMap(s, to)).filter(r => r.tarih);
+  const rows = satirlar.map(s => depoSatisSatirMap(s, to)).filter(r => r.tarih);
 
   // Batch upsert
   for (let i = 0; i < rows.length; i += 500) {
     const batch = rows.slice(i, i + 500);
-    // Karlilik tablosunda generated column fatura_tipi + unique constraint var (migration history'den)
     const { error } = await supabase
-      .from('dia_karlilik_raporu')
-      .upsert(batch, { onConflict: 'fatura_no,stok_kodu,tarih', ignoreDuplicates: false });
+      .from('dia_depo_satis_raporu')
+      .upsert(batch, { onConflict: 'fatura_no,stok_kodu,depo_kodu,tarih', ignoreDuplicates: false });
     if (error) {
-      // onConflict yoksa düz insert dene (idempotent değil, ama boş tabloda çalışır)
-      const { error: e2 } = await supabase.from('dia_karlilik_raporu').insert(batch);
-      if (e2) throw new Error(`Karlilik upsert: ${error.message} | insert fallback: ${e2.message}`);
+      // onConflict yoksa düz insert dene
+      const { error: e2 } = await supabase.from('dia_depo_satis_raporu').insert(batch);
+      if (e2) throw new Error(`Depo satış upsert: ${error.message} | insert fallback: ${e2.message}`);
     }
   }
-  return { toplam: rows.length };
+  return { toplam: rows.length, raporKodu, tasarimKey };
+}
+
+// Ayın 1'inden bugüne tarih aralığı (TR saatiyle)
+function ayBasindanBugune() {
+  const bugunTR = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Istanbul' });
+  const [yil, ay] = bugunTR.split('-');
+  return { from: `${yil}-${ay}-01`, to: bugunTR };
 }
 
 // ============================================================================
@@ -385,8 +399,8 @@ module.exports = async (req, res) => {
           'stok-test': 'İlk 5 stok kartını ham olarak döndür (debug)',
           'kalem':     '?from=YYYY-MM-DD&to=YYYY-MM-DD fatura kalemlerini çek + upsert',
           'kalem-test': '?tarih=YYYY-MM-DD → o günün ilk 5 kalemini ham olarak döndür',
-          'karlilik-sync': '?from=&to= SCF2240A raporu → dia_karlilik_raporu upsert',
-          'rapor-params': '?rapor=SCF2240A — rapor parametre listesi (debug)',
+          'depo-satis-sync': '(opsiyonel ?from=&to=) SCF9009A raporu → dia_depo_satis_raporu upsert. Parametre yoksa ayın 1\'inden bugüne.',
+          'rapor-params': '?rapor=SCF9009A — rapor parametre listesi (debug)',
           'rapor-cek': '?rapor=&tasarim_key=&param=... — rapor sonucu ham döndür (debug)',
         };
         break;
@@ -460,18 +474,19 @@ module.exports = async (req, res) => {
         break;
       }
 
-      case 'karlilik-sync': {
-        const bugunTR = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Istanbul' });
-        const from = req.query?.from || bugunTR;
-        const to   = req.query?.to   || bugunTR;
-        const out = await syncKarlilik(sessionId, firma_kodu, donem_kodu, { from, to });
-        results.karlilik = { from, to, ...out };
-        await logSync('dia_karlilik_raporu', 'karlilik-sync', out.toplam, null);
+      case 'depo-satis-sync': {
+        // Vercel cron path'i statik. Parametre yoksa ayın 1'inden bugüne (TR saatiyle).
+        const def = ayBasindanBugune();
+        const from = req.query?.from || def.from;
+        const to   = req.query?.to   || def.to;
+        const out = await syncDepoSatis(sessionId, firma_kodu, donem_kodu, { from, to });
+        results.depo_satis = { from, to, ...out };
+        await logSync('dia_depo_satis_raporu', 'depo-satis-sync', out.toplam, null);
         break;
       }
 
       case 'rapor-params': {
-        const raporKodu = req.query?.rapor || 'SCF2240A';
+        const raporKodu = req.query?.rapor || 'SCF9009A';
         const data = await diaCall('rpr/json', {
           rpr_dinamik_raporparametreleri_getir: {
             session_id: sessionId, firma_kodu, donem_kodu, report_code: raporKodu,
@@ -482,8 +497,8 @@ module.exports = async (req, res) => {
       }
 
       case 'rapor-cek': {
-        const raporKodu = req.query?.rapor || 'SCF2240A';
-        const tasarimKey = req.query?.tasarim_key || 808;
+        const raporKodu = req.query?.rapor || 'SCF9009A';
+        const tasarimKey = req.query?.tasarim_key || process.env.DIA_DEPO_TASARIM_KEY || 0;
         let param = {};
         if (req.query?.param) {
           try { param = JSON.parse(decodeURIComponent(req.query.param)); } catch { /* */ }
