@@ -314,14 +314,21 @@ async function syncDepoSatis(sessionId, firmaKodu, donemKodu, { from, to, raporK
   // Tarih param adları: tarihbaslangic / tarihbitis
   raporKodu  = raporKodu  || process.env.DIA_DEPO_RAPOR_KODU  || 'SCF9009A';
   tasarimKey = tasarimKey || process.env.DIA_DEPO_TASARIM_KEY || 1038;
-  // DIA UI default'larla çalışıyor (kullanıcı manuel rapor çekti, 51 satır döndü).
-  // Bizim önceki "her parametreyi açıkça gönder" yaklaşımı boş döndürüyordu —
-  // muhtemelen boş array'ler ("hiçbiri seçili değil") olarak yorumlanıyordu.
-  // Şimdi UI gibi minimal param: sadece tarih ve zorunlu _key_filtrekodu.
+  // DIA tüm parametreleri zorunlu kabul ediyor (sırayla 501 hatası veriyor).
+  // fisturleri formatı: widgetinit'teki 2. field = integer kod (2, 3, 5, 13).
+  // Path notation ('1.1' vb.) önceden denendi, 0 satır döndü.
   const param = {
     tarihbaslangic: from,
     tarihbitis:     to,
-    _key_filtrekodu: 0,        // 501 hatası verdiği için zorunlu, 0 = tüm depolar
+    _key_filtrekodu: 0,
+    _depolar:       [],
+    // 2=Perakende Satış, 3=Toptan Satış, 5=Konsinye Çıkış, 13=Özel Çıkış
+    fisturleri:     [2, 3, 5, 13],
+    ustIslemTuruKeys: [],
+    girisfiyat:     'maliyet',
+    irsaliyeler:    'True',
+    serilotgoruntule: 'False',
+    raporlamadovizinegorehesapla: 'False',
   };
   const raporSonuc = await diaRaporSonucGetir(sessionId, firmaKodu, donemKodu, raporKodu, tasarimKey, param);
 
