@@ -313,7 +313,8 @@ async function syncDepoSatis(sessionId, firmaKodu, donemKodu, { from, to, raporK
   //   tasarim_key 1039 = "Depo Satış Raporu (Grafik)"
   // Tarih param adları: tarihbaslangic / tarihbitis
   raporKodu  = raporKodu  || process.env.DIA_DEPO_RAPOR_KODU  || 'SCF9009A';
-  tasarimKey = tasarimKey || process.env.DIA_DEPO_TASARIM_KEY || 1038;
+  // tasarim_key 1039 = "Grafik" (data döndürür), 1038 = "Karakter" (print template)
+  tasarimKey = tasarimKey || process.env.DIA_DEPO_TASARIM_KEY || 1039;
   // DIA tüm parametreleri zorunlu kabul ediyor (sırayla 501 hatası veriyor).
   // fisturleri formatı: widgetinit'teki 2. field = integer kod (2, 3, 5, 13).
   // Path notation ('1.1' vb.) önceden denendi, 0 satır döndü.
