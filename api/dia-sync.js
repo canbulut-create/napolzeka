@@ -317,7 +317,11 @@ async function syncDepoSatis(sessionId, firmaKodu, donemKodu, { from, to, raporK
   const param = {
     tarihbaslangic: from,
     tarihbitis:     to,
-    girisfiyat:     'maliyet', // maliyet hesaplama yöntemi (DIA default)
+    _key_filtrekodu: 0,        // Satış Deposu (lookup) — 0 = tüm depolar
+    _depolar:       [],        // veya Depolar (mcombo) — boş = filtre yok
+    fisturleri:     [],        // tüm fiş türleri
+    ustIslemTuruKeys: [],
+    girisfiyat:     'maliyet', // maliyet hesaplama yöntemi
     irsaliyeler:    'False',   // sadece faturalanmış irsaliyeler
     serilotgoruntule: 'False',
     raporlamadovizinegorehesapla: 'False',
