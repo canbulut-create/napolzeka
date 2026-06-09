@@ -277,46 +277,50 @@ async function diaRaporSonucGetir(sessionId, firmaKodu, donemKodu, raporKodu, ta
   return data.result;
 }
 
-// SCF9009A rapor satırı eşleme. Field adları DIA'dan dönen yapıya göre best-effort
-// fallback'lerle çözülüyor; ham satır `raw_data` jsonb içinde saklanıyor ki ileride
-// rapor parametreleri/sütunları değiştiğinde tabloyu drop etmeden uyarlanabilsin.
+// SCF9009A rapor satırı eşleme. Field adları DIA rapor-params keşfinden (2026-06-09):
+//   faturabelgeno=Fatura No, belgeno2=İrsaliye No, belgeno=Belge No, fisno=Fiş No,
+//   turu=İrsaliye Türü, carikodu, cariunvan, stokkodu, stokadi, depokodu, depo (=ad),
+//   miktar/anamiktar, birim, birimfiyati, tutari, toplamsatirtutari, doviz, dovizkuru
+// Ham satır `raw_data` jsonb içinde saklanıyor — gelecekte ek alan gerekirse buradan okunur.
 function depoSatisSatirMap(r, raporTarihi) {
-  const fatura_no = r.fatura_no || r.belgeno || r.belgeno2 || r.fisno || null;
-  const toplam    = parseFloat(r.toplam_tutar ?? r.tutar ?? r.toplamFaturaTutari) || 0;
+  const fatura_no = r.faturabelgeno || r.belgeno2 || r.belgeno || r.fisno || null;
+  const toplam    = parseFloat(r.toplamsatirtutari ?? r.tutari) || 0;
   const miktar    = parseFloat(r.miktar ?? r.anamiktar) || null;
-  const birim_fiyat = parseFloat(r.birim_fiyat ?? r.birimfiyati ?? r.yerelbirimfiyati) || null;
+  const birim_fiyat = parseFloat(r.birimfiyati ?? r.yerelbirimfiyati) || null;
   return {
     tarih:         r.tarih || raporTarihi,
     fatura_no,
-    fis_turu:      r.fis_turu || r.turuaciklama || null,
-    cari_kodu:     r.cari_kodu || r.carikodu || null,
-    cari_unvan:    r.cari_unvan || r.carifirma || r.cariadi || null,
-    stok_kodu:     r.stok_kodu || r.stokkartkodu || r.kartkodu || null,
-    stok_adi:      r.stok_adi || r.aciklama || r.kartaciklama || null,
-    depo_kodu:     r.depo_kodu || r.depokodu || r._key_sis_depo || null,
-    depo_adi:      r.depo_adi || r.depoadi || null,
+    fis_turu:      r.turu || null,
+    cari_kodu:     r.carikodu || null,
+    cari_unvan:    r.cariunvan || null,
+    stok_kodu:     r.stokkodu || null,
+    stok_adi:      r.stokadi || null,
+    depo_kodu:     r.depokodu || null,
+    depo_adi:      r.depo || null,
     miktar,
-    birim:         r.birim || r.fatbirimi || null,
+    birim:         r.birim || r.anabirim || null,
     birim_fiyat,
     toplam_tutar:  toplam,
-    doviz:         r.doviz || r.kalemdovizi || 'TRY',
+    doviz:         r.doviz || 'TRY',
     raw_data:      r,
     yukleme_tarihi: new Date().toISOString(),
   };
 }
 
 async function syncDepoSatis(sessionId, firmaKodu, donemKodu, { from, to, raporKodu, tasarimKey }) {
+  // SCF9009A "Depo Satış Raporu" — rapor-params ile keşfedilmiş gerçek değerler:
+  //   tasarim_key 1038 = "Depo Satış Raporu (Karakter)" (text-based, parse kolay)
+  //   tasarim_key 1039 = "Depo Satış Raporu (Grafik)"
+  // Tarih param adları: tarihbaslangic / tarihbitis
   raporKodu  = raporKodu  || process.env.DIA_DEPO_RAPOR_KODU  || 'SCF9009A';
-  tasarimKey = tasarimKey || process.env.DIA_DEPO_TASARIM_KEY || 0;
-  if (!tasarimKey || parseInt(tasarimKey) === 0) {
-    return { toplam: 0, not: 'DIA_DEPO_TASARIM_KEY env değişkeni tanımlı değil. ?type=rapor-params&rapor=SCF9009A ile keşfedin.' };
-  }
-  // Param adları SCF9009A için keşfedilince güncellenecek. Şimdilik yaygın isimler.
+  tasarimKey = tasarimKey || process.env.DIA_DEPO_TASARIM_KEY || 1038;
   const param = {
-    tarih_bas:  from,
-    tarih_son:  to,
-    fistarihi1: from,
-    fistarihi2: to,
+    tarihbaslangic: from,
+    tarihbitis:     to,
+    girisfiyat:     'maliyet', // maliyet hesaplama yöntemi (DIA default)
+    irsaliyeler:    'False',   // sadece faturalanmış irsaliyeler
+    serilotgoruntule: 'False',
+    raporlamadovizinegorehesapla: 'False',
   };
   const raporSonuc = await diaRaporSonucGetir(sessionId, firmaKodu, donemKodu, raporKodu, tasarimKey, param);
 
