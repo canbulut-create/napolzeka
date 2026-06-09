@@ -319,7 +319,9 @@ async function syncDepoSatis(sessionId, firmaKodu, donemKodu, { from, to, raporK
     tarihbitis:     to,
     _key_filtrekodu: 0,        // Satış Deposu (lookup) — 0 = tüm depolar
     _depolar:       [],        // veya Depolar (mcombo) — boş = filtre yok
-    fisturleri:     [],        // tüm fiş türleri
+    // Fiş türleri: rapor-params widgetinit'ten — "1" mainitem ile tüm satış türleri seçilir
+    // (1.1=Perakende, 1.2=Toptan, 1.3=Konsinye, 1.4=Özel Çıkış)
+    fisturleri:     ['1', '1.1', '1.2', '1.3', '1.4'],
     ustIslemTuruKeys: [],
     girisfiyat:     'maliyet', // maliyet hesaplama yöntemi
     irsaliyeler:    'False',   // sadece faturalanmış irsaliyeler
