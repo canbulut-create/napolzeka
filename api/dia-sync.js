@@ -324,7 +324,7 @@ async function syncDepoSatis(sessionId, firmaKodu, donemKodu, { from, to, raporK
     fisturleri:     ['1', '1.1', '1.2', '1.3', '1.4'],
     ustIslemTuruKeys: [],
     girisfiyat:     'maliyet', // maliyet hesaplama yöntemi
-    irsaliyeler:    'False',   // sadece faturalanmış irsaliyeler
+    irsaliyeler:    'True',    // tüm irsaliyeler (faturalanmamış olanlar dahil)
     serilotgoruntule: 'False',
     raporlamadovizinegorehesapla: 'False',
   };
