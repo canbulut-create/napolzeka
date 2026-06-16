@@ -3,8 +3,7 @@
     { "path": "/api/tcmb-sync",                       "schedule": "0 6 * * 1-5" },
     { "path": "/api/fatura-sync",                     "schedule": "0 14 * * 1-6" },
     { "path": "/api/dia-sync?type=kalem",             "schedule": "15 14 * * 1-5" },
-    { "path": "/api/daily-report",                    "schedule": "0 15 * * 1-5" },
-    { "path": "/api/weekly-report",                   "schedule": "0 7 * * 6" },
+    { "path": "/api/gunluk-fatura",                   "schedule": "0 15 * * 1-5" },
     { "path": "/api/haftalik-sync",                   "schedule": "0 23 * * 0" },
     { "path": "/api/dia-sync?type=stok-full",         "schedule": "0 22 * * 0" }
   ]

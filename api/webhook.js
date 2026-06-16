@@ -193,75 +193,6 @@ async function execVergi({ islem, ay, yil }) {
   return JSON.stringify({ hata: 'Ge\u00E7ersiz i\u015Flem' });
 }
 
-// ==================== DIA HELPERS (generateMorningReport i\u00E7in) ====================
-const DIA_URL_K = `https://${process.env.DIA_SERVER}.ws.dia.com.tr/api/v3`;
-const DIA_FIRMA_K = parseInt(process.env.DIA_FIRMA || '2');
-const DIA_DONEM_K = parseInt(process.env.DIA_DONEM || '3');
-
-async function diaLoginK() {
-  const res = await fetch(`${DIA_URL_K}/sis/json`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ login: { username: process.env.DIA_USERNAME, password: process.env.DIA_PASSWORD, disconnect_same_user: true, lang: 'tr', params: { apikey: process.env.DIA_API_KEY } } })
-  });
-  const d = await res.json();
-  if (String(d.code) !== '200') throw new Error(`DIA login: ${d.msg}`);
-  return d.msg;
-}
-
-async function diaCallK(endpoint, body) {
-  const res = await fetch(`${DIA_URL_K}/${endpoint}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  const d = await res.json();
-  if (String(d.code) !== '200') throw new Error(`DIA: ${d.msg || d.code}`);
-  return d;
-}
-
-// ==================== MORNING REPORT ====================
-async function generateMorningReport() {
-  const today = new Date().toISOString().split('T')[0];
-  const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
-  const next7 = new Date(Date.now() + 7*86400000).toISOString().split('T')[0];
-  let cepler = [];
-  try {
-    const sessionId = await diaLoginK();
-    const res = await diaCallK('bcs/json', {
-      bcs_ceksenet_listele: {
-        session_id: sessionId, firma_kodu: DIA_FIRMA_K, donem_kodu: DIA_DONEM_K,
-        filters: [{ field: 'durum', operator: '=', value: 'Portf\u00F6yde' }],
-        sorts: [{ field: 'vade', sorttype: 'ASC' }],
-        params: { __selectHeader: ['ceksenetno','vade','tutar','cariadi','banka','durum'] },
-        limit: 200, offset: 0
-      }
-    });
-    cepler = res.result || [];
-  } catch(e) { console.error('Rapor hata:', e.message); }
-  const bug = cepler.filter(x => x.vade === today);
-  const yar = cepler.filter(x => x.vade === tomorrow);
-  const haf = cepler.filter(x => x.vade >= today && x.vade <= next7);
-  const gec = cepler.filter(x => x.vade < today);
-  const fm = n => Number(n||0).toLocaleString('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-  let r = `\uD83C\uDF05 <b>G\u00DCNL\u00DCK RAPOR \u2014 ${today}</b>\n\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n`;
-  if (bug.length > 0) {
-    r += `\uD83D\uDD34 <b>Bug\u00FCn (${bug.length} adet \u2014 ${fm(bug.reduce((s,x)=>s+(x.tutar||0),0))} \u20BA)</b>\n`;
-    bug.forEach((x,i) => { r += `${i+1}. ${x.cariadi||'-'} \u2014 ${fm(x.tutar)} \u20BA | ${x.banka||''}\n`; });
-    r += '\n';
-  } else { r += '\u2705 Bug\u00FCn vadesi dolan \u00E7ek yok.\n\n'; }
-  if (yar.length > 0) {
-    r += `\u26A0\uFE0F <b>Yar\u0131n (${yar.length} adet \u2014 ${fm(yar.reduce((s,x)=>s+(x.tutar||0),0))} \u20BA)</b>\n`;
-    yar.forEach((x,i) => { r += `${i+1}. ${x.cariadi||'-'} \u2014 ${fm(x.tutar)} \u20BA\n`; });
-    r += '\n';
-  }
-  if (haf.length > 0) r += `\uD83D\uDCC5 <b>7 G\u00FCN: ${fm(haf.reduce((s,x)=>s+(x.tutar||0),0))} \u20BA (${haf.length} \u00E7ek)</b>\n\n`;
-  if (gec.length > 0) {
-    r += `\uD83D\uDEA8 <b>Ge\u00E7ikmi\u015F (${gec.length} adet \u2014 ${fm(gec.reduce((s,x)=>s+(x.tutar||0),0))} \u20BA)</b>\n`;
-    gec.slice(0,5).forEach((x,i) => { r += `${i+1}. ${x.vade} | ${x.cariadi||'-'} \u2014 ${fm(x.tutar)} \u20BA\n`; });
-    if (gec.length > 5) r += ` ...ve ${gec.length-5} \u00E7ek daha\n`;
-  }
-  r += '\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n<i>OpenClaw Agent \u2014 Napol Global</i>';
-  return r;
-}
 
 // ==================== AGENT ====================
 const SYSTEM_PROMPT = `Sen OpenClaw, Napol Global \u015Firketinin AI asistan\u0131s\u0131n. Napol Global; silikonlu ka\u011F\u0131t ve ambalaj malzemeleri \u00FCretir/satar.
@@ -314,13 +245,13 @@ module.exports = async function handler(req, res) {
 
     // /start
     if (command === '/start') {
-      await send(chatId, `\uD83D\uDC4B Merhaba ${user.full_name}!\n\nBen OpenClaw Agent, Napol Global \u015Firket asistan\u0131y\u0131m.\n\n\uD83D\uDCC4 /rapor \u2014 G\u00FCnl\u00FCk \u00E7ek raporu\n\uD83D\uDCCF /limit \u2014 Limit durumu\n\u2753 /yardim \u2014 Yard\u0131m`);
+      await send(chatId, `\uD83D\uDC4B Merhaba ${user.full_name}!\n\nBen OpenClaw Agent, Napol Global \u015Firket asistan\u0131y\u0131m.\n\n\uD83D\uDCCF /limit \u2014 Limit durumu\n\u2753 /yardim \u2014 Yard\u0131m`);
       await logQuery(msg.from.id, 'start', text, ''); return res.status(200).json({ ok: true });
     }
 
     // /yardim
     if (command === '/yardim' || command === '/help') {
-      await send(chatId, `\uD83D\uDCDA <b>OpenClaw Rehber</b>\n\nDo\u011Fal dilde soru sor:\n\u2022 "OSEKA bakiyesi"\n\u2022 "Bize en bor\u00E7lu 5 firma"\n\u2022 "Bu hafta vadesi gelen \u00E7ekler"\n\u2022 "Son faturalar"\n\n\uD83D\uDCC4 /rapor\n\uD83D\uDCCF /limit`);
+      await send(chatId, `\uD83D\uDCDA <b>OpenClaw Rehber</b>\n\nDo\u011Fal dilde soru sor:\n\u2022 "OSEKA bakiyesi"\n\u2022 "Bize en bor\u00E7lu 5 firma"\n\u2022 "Bu hafta vadesi gelen \u00E7ekler"\n\u2022 "Son faturalar"\n\n\uD83D\uDCCF /limit`);
       return res.status(200).json({ ok: true });
     }
 
@@ -328,16 +259,6 @@ module.exports = async function handler(req, res) {
     if (command === '/limit') {
       const l = await checkLimits(msg.from.id);
       await send(chatId, `\uD83D\uDCCF G\u00FCnl\u00FCk: ${l.daily||0}/${DAILY_LIMIT}`);
-      return res.status(200).json({ ok: true });
-    }
-
-    // /rapor
-    if (command === '/rapor') {
-      if (user.role !== 'admin') { await send(chatId, '\uD83D\uDEAB Sadece y\u00F6netici.'); return res.status(200).json({ ok: true }); }
-      await typing(chatId);
-      const report = await generateMorningReport();
-      await sendHtml(chatId, report);
-      await logQuery(msg.from.id, 'rapor', text, 'rapor');
       return res.status(200).json({ ok: true });
     }
 
