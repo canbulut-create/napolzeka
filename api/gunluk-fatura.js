@@ -9,7 +9,10 @@
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://lsxvskcdbppslpxaixky.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY;
 const TG_TOKEN     = process.env.TELEGRAM_BOT_TOKEN;
-const TG_CHAT      = process.env.TELEGRAM_CHAT_ID;
+// Hedef chat(ler): önce TELEGRAM_CHAT_ID, yoksa ADMIN_TELEGRAM_IDS (virgüllü liste).
+const TG_CHATS = (process.env.TELEGRAM_CHAT_ID
+  ? [process.env.TELEGRAM_CHAT_ID]
+  : (process.env.ADMIN_TELEGRAM_IDS || '').split(',').map(s => s.trim()).filter(Boolean));
 const CRON_SECRET  = process.env.NAPOL_CRON_SECRET || process.env.CRON_SECRET;
 
 // ----- Yardımcılar -----
@@ -120,8 +123,10 @@ module.exports = async (req, res) => {
   }
 
   try {
-    if (!TG_TOKEN || !TG_CHAT) {
-      return res.status(500).json({ error: 'TELEGRAM_BOT_TOKEN veya TELEGRAM_CHAT_ID eksik' });
+    if (!TG_TOKEN || TG_CHATS.length === 0) {
+      return res.status(500).json({
+        error: 'TELEGRAM_BOT_TOKEN yok veya hedef chat tanımlı değil (TELEGRAM_CHAT_ID veya ADMIN_TELEGRAM_IDS eksik)',
+      });
     }
 
     // İsteğe bağlı ?tarih=YYYY-MM-DD parametresi (test için), yoksa TR bugünü.
@@ -133,7 +138,9 @@ module.exports = async (req, res) => {
     );
 
     const msg = raporOlustur(tarih, faturalar);
-    await sendTelegram(TG_CHAT, msg);
+    for (const chat of TG_CHATS) {
+      await sendTelegram(chat, msg);
+    }
 
     return res.status(200).json({
       success: true,
@@ -141,12 +148,15 @@ module.exports = async (req, res) => {
       toplam: faturalar.length,
       giden: faturalar.filter(f => (f.fatura_no || '').startsWith('NPE')).length,
       gelen: faturalar.filter(f => !(f.fatura_no || '').startsWith('NPE')).length,
+      gonderildi: TG_CHATS.length,
     });
   } catch (err) {
     console.error('gunluk-fatura hata:', err.message);
     // Hata durumunda Telegram'a uyarı at (sessiz kalmasın)
     try {
-      await sendTelegram(TG_CHAT, `❌ <b>Günlük fatura raporu hata</b>\n${escapeHtml(err.message)}`);
+      for (const chat of TG_CHATS) {
+        await sendTelegram(chat, `❌ <b>Günlük fatura raporu hata</b>\n${escapeHtml(err.message)}`);
+      }
     } catch {}
     return res.status(500).json({ success: false, error: err.message });
   }
