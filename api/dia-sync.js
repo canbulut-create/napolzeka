@@ -544,6 +544,7 @@ module.exports = async (req, res) => {
           inner = {
             session_id: sessionId,
             firma_kodu, donem_kodu,
+            report_code: raporKodu,
             filters: '', sorts: '',
             format_type: formatType,
             params: paramsWithTasarim,
