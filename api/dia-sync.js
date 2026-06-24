@@ -534,15 +534,33 @@ module.exports = async (req, res) => {
         if (req.query?.param) {
           try { param = JSON.parse(decodeURIComponent(req.query.param)); } catch { /* */ }
         }
-        const inner = {
-          session_id: sessionId,
-          firma_kodu, donem_kodu,
-          report_code: raporKodu,
-          param,
-          format_type: formatType,
-        };
-        if (!noTasarim) inner.tasarim_key = tasarimKey;
-        if (raporKey) inner._key_rpr_raporlar = raporKey;
+        // body_style: v2 (default, SCF9009A için param tekil + outer tasarim_key) | v1 (SCF2240A formatı: params çoğul + tasarim_key params içinde + filters/sorts/limit/offset outer)
+        const bodyStyle = req.query?.body_style || 'v2';
+        let inner;
+        if (bodyStyle === 'v1') {
+          // SCF2240A çalışan format
+          const paramsWithTasarim = { ...param };
+          if (!noTasarim) paramsWithTasarim.tasarim_key = tasarimKey;
+          inner = {
+            session_id: sessionId,
+            firma_kodu, donem_kodu,
+            filters: '', sorts: '',
+            format_type: formatType,
+            params: paramsWithTasarim,
+            limit: 5000, offset: 0,
+          };
+          if (raporKey) inner._key_rpr_raporlar = raporKey;
+        } else {
+          inner = {
+            session_id: sessionId,
+            firma_kodu, donem_kodu,
+            report_code: raporKodu,
+            param,
+            format_type: formatType,
+          };
+          if (!noTasarim) inner.tasarim_key = tasarimKey;
+          if (raporKey) inner._key_rpr_raporlar = raporKey;
+        }
         const body = {}; body[method] = inner;
         try {
           const data = await diaCall('rpr/json', body);
