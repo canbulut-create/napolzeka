@@ -521,6 +521,57 @@ module.exports = async (req, res) => {
         break;
       }
 
+      case 'rapor-cek-v2': {
+        // Parametrik debug endpoint — farklı SOAP method, format_type, tasarim opsiyonu ile rapor çekme.
+        // Query: ?method=rpr_raporsonuc_getir&format=json&rapor=SCF9009A&tasarim_key=1038&no_tasarim=0&rapor_key=&param=<urlencoded JSON>
+        const raporKodu  = req.query?.rapor || 'SCF9009A';
+        const method     = req.query?.method || 'rpr_raporsonuc_getir';
+        const formatType = req.query?.format || 'json';
+        const noTasarim  = req.query?.no_tasarim === '1';
+        const tasarimKey = parseInt(req.query?.tasarim_key || '0');
+        const raporKey   = req.query?.rapor_key ? parseInt(req.query.rapor_key) : null;
+        let param = {};
+        if (req.query?.param) {
+          try { param = JSON.parse(decodeURIComponent(req.query.param)); } catch { /* */ }
+        }
+        const inner = {
+          session_id: sessionId,
+          firma_kodu, donem_kodu,
+          report_code: raporKodu,
+          param,
+          format_type: formatType,
+        };
+        if (!noTasarim) inner.tasarim_key = tasarimKey;
+        if (raporKey) inner._key_rpr_raporlar = raporKey;
+        const body = {}; body[method] = inner;
+        try {
+          const data = await diaCall('rpr/json', body);
+          // Result base64 olursa decode et — okumayı kolaylaştır
+          let decoded = null, rowsLen = null;
+          if (typeof data.result === 'string') {
+            try {
+              decoded = JSON.parse(Buffer.from(data.result, 'base64').toString('utf-8'));
+              rowsLen = (decoded.__rows || decoded.rows || decoded.data || []).length;
+            } catch {}
+          } else if (Array.isArray(data.result)) {
+            rowsLen = data.result.length;
+          }
+          results.rapor = {
+            method, format: formatType, raporKodu,
+            tasarim_gonderildi: !noTasarim, tasarim_key: noTasarim ? null : tasarimKey,
+            rapor_key: raporKey,
+            code: data.code, msg: data.msg,
+            result_type: typeof data.result,
+            decoded_rows_len: rowsLen,
+            decoded_keys: decoded ? Object.keys(decoded).slice(0, 20) : null,
+            raw_first_500: typeof data.result === 'string' ? data.result.substring(0, 500) : null,
+          };
+        } catch (e) {
+          results.rapor = { method, format: formatType, raporKodu, hata: e.message };
+        }
+        break;
+      }
+
       default:
         results.uyari = `Bilinmeyen tip: ${tip}. ?type=help ile mod listesini gör.`;
     }
