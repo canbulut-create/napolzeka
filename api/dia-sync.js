@@ -546,25 +546,27 @@ module.exports = async (req, res) => {
         const body = {}; body[method] = inner;
         try {
           const data = await diaCall('rpr/json', body);
-          // Result base64 olursa decode et — okumayı kolaylaştır
-          let decoded = null, rowsLen = null;
+          // Result base64 olursa decode et
+          let decodedText = null, decodedJson = null, rowsLen = null;
           if (typeof data.result === 'string') {
-            try {
-              decoded = JSON.parse(Buffer.from(data.result, 'base64').toString('utf-8'));
-              rowsLen = (decoded.__rows || decoded.rows || decoded.data || []).length;
-            } catch {}
+            try { decodedText = Buffer.from(data.result, 'base64').toString('utf-8'); } catch {}
+            if (decodedText) {
+              try { decodedJson = JSON.parse(decodedText); rowsLen = (decodedJson.__rows || decodedJson.rows || decodedJson.data || []).length; } catch {}
+            }
           } else if (Array.isArray(data.result)) {
             rowsLen = data.result.length;
           }
+          const dump = req.query?.dump === '1';
           results.rapor = {
             method, format: formatType, raporKodu,
             tasarim_gonderildi: !noTasarim, tasarim_key: noTasarim ? null : tasarimKey,
             rapor_key: raporKey,
-            code: data.code, msg: data.msg,
-            result_type: typeof data.result,
+            code: data.code, result_type: typeof data.result,
             decoded_rows_len: rowsLen,
-            decoded_keys: decoded ? Object.keys(decoded).slice(0, 20) : null,
-            raw_first_500: typeof data.result === 'string' ? data.result.substring(0, 500) : null,
+            decoded_keys: decodedJson ? Object.keys(decodedJson).slice(0, 20) : null,
+            decoded_length: decodedText ? decodedText.length : null,
+            decoded_full: dump ? decodedText : null,
+            decoded_first_2000: !dump && decodedText ? decodedText.substring(0, 2000) : null,
           };
         } catch (e) {
           results.rapor = { method, format: formatType, raporKodu, hata: e.message };
